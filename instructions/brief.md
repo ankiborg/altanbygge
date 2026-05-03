@@ -86,14 +86,46 @@ Verktyget riktar sig till privatpersoner i Sverige som planerar att bygga en alt
 
 ---
 
-### Iteration 4 – Materialberäkning
+### Iteration 4 – Bjälklag
 
-**Mål:** Verktyget genererar en komplett inköpslista baserat på ritningen.
+**Mål:** Användaren kan se hur reglar och bjälkar ska placeras under altanytan.
+
+**Funktioner:**
+- Automatisk beräkning av regelplacering (c/c 600 mm, standard)
+- Automatisk beräkning av bjälkplacering baserat på altanens spännvidd
+- Stolpplacering visas i planvyn
+- 3D-vy visar konstruktionsskiktet under brädorna (toggle för att visa/dölja)
+
+**Hårdkodade standardvärden:**
+- Reglar: 45×70 mm, c/c 600 mm, vinkelrätt mot brädorna
+- Bjälkar: 45×195 mm, max spännvidd 2 400 mm mellan stolpar
+- Stolpar: 90×90 mm
+
+---
+
+### Iteration 5 – Plintar och fundament
+
+**Mål:** Användaren kan se antal och placering av plintar/betongfundament.
+
+**Funktioner:**
+- Plintplacering beräknas automatiskt under varje stolpe
+- Visas i planvyn med symbol och i 3D-vyn
+- Antal plintar räknas ut och visas i ett sammanfattningspanel
+
+**Hårdkodade standardvärden:**
+- Plint: 300×300 mm betongplatta eller rörbetong ø200 mm
+- Djup under mark: visas som information (frostfritt djup varierar per region)
+
+---
+
+### Iteration 6 – Materialberäkning
+
+**Mål:** Verktyget genererar en komplett inköpslista baserat på hela konstruktionen.
 
 **Funktioner:**
 - Beräkning av antal altanbrädor (inkl. spill på 10%)
-- Beräkning av bärande balkar och reglar baserat på spännvidd och höjd
-- Beräkning av stolpar och fundament
+- Beräkning av reglar, bjälkar och stolpar från iteration 4
+- Beräkning av plintar från iteration 5
 - Skruvlista (typ och antal)
 - Export till PDF eller utskrift
 

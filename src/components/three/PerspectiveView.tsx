@@ -3,8 +3,12 @@ import * as THREE from 'three'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 import { useDeckStore } from '@/store/deckStore'
 import { getDeckCorners } from '@/utils/geometry'
-import { getBoardLinesForShape } from '@/utils/polygon'
-import type { DeckShape, WallDirection } from '@/types/deck'
+import { getBoardLinesForShape, getEdgeDims } from '@/utils/polygon'
+import {
+  numSteps, getStairCorners, getPlanterCorners,
+  STEP_RISE, STEP_DEPTH,
+} from '@/utils/stairPlanter'
+import type { DeckShape, WallDirection, Stair, PlanterBox } from '@/types/deck'
 
 const DIR_ANGLE: Record<WallDirection, number> = {
   south: 0,
@@ -14,8 +18,6 @@ const DIR_ANGLE: Record<WallDirection, number> = {
 }
 
 function buildDeckGeometry(shape: DeckShape, height: number): THREE.BufferGeometry {
-  // THREE.Shape uses XY; we map deck (x, z_world) → (x, -z_world) then rotateX(-π/2)
-  // so that z_world becomes +Z in Three.js world space
   const s = new THREE.Shape()
   s.moveTo(shape[0].x, -shape[0].y)
   for (let i = 1; i < shape.length; i++) s.lineTo(shape[i].x, -shape[i].y)
@@ -26,12 +28,117 @@ function buildDeckGeometry(shape: DeckShape, height: number): THREE.BufferGeomet
   return geo
 }
 
+function addStairs(
+  group: THREE.Group,
+  stairs: Stair[],
+  shape: DeckShape,
+  heightAboveGround: number,
+) {
+  const mat = new THREE.MeshLambertMaterial({ color: 0xc8a46e })
+  const edges = getEdgeDims(shape)
+  const steps = numSteps(heightAboveGround)
+
+  for (const stair of stairs) {
+    if (stair.kind === 'corner') {
+      const n = shape.length
+      const anchor = shape[stair.cornerIndex]
+      if (!anchor) continue
+      const nA = edges[(stair.cornerIndex - 1 + n) % n].outNormal
+      const nB = edges[stair.cornerIndex].outNormal
+      // Rotate box so local X → nA, local Z → nB
+      const rotY = Math.atan2(-nA.y, nA.x)
+
+      // Each slab is a growing square filling the corner: s=0 is closest (smallest)
+      for (let s = 0; s < steps; s++) {
+        const size = (s + 1) * STEP_DEPTH
+        const slabH = Math.max(0.01, heightAboveGround - (s + 1) * STEP_RISE)
+        const mesh = new THREE.Mesh(
+          new THREE.BoxGeometry(size, slabH, size),
+          mat,
+        )
+        mesh.rotation.y = rotY
+        mesh.position.set(
+          anchor.x + (size / 2) * nA.x + (size / 2) * nB.x,
+          slabH / 2,
+          anchor.y + (size / 2) * nA.y + (size / 2) * nB.y,
+        )
+        group.add(mesh)
+      }
+    } else {
+      const edge = edges[stair.edgeIndex]
+      if (!edge) continue
+      const corners = getStairCorners(edge, stair, steps)
+      const cx = (corners[0].x + corners[1].x) / 2
+      const cz = (corners[0].y + corners[1].y) / 2
+      const nx = edge.outNormal.x
+      const nz = edge.outNormal.y
+      const tx = edge.to.x - edge.from.x
+      const tz = edge.to.y - edge.from.y
+      const tLen = Math.sqrt(tx * tx + tz * tz)
+      const rotY = tLen > 0 ? -Math.atan2(tz / tLen, tx / tLen) : 0
+
+      // Slab approach: s=0 is the step closest to the deck (one step below it)
+      for (let s = 0; s < steps; s++) {
+        const distFromEdge = (s + 0.5) * STEP_DEPTH
+        const slabH = Math.max(0.01, heightAboveGround - (s + 1) * STEP_RISE)
+        const mesh = new THREE.Mesh(
+          new THREE.BoxGeometry(stair.width, slabH, STEP_DEPTH),
+          mat,
+        )
+        mesh.rotation.y = rotY
+        mesh.position.set(
+          cx + nx * distFromEdge,
+          slabH / 2,
+          cz + nz * distFromEdge,
+        )
+        group.add(mesh)
+      }
+    }
+  }
+}
+
+function addPlanters(
+  group: THREE.Group,
+  planters: PlanterBox[],
+  shape: DeckShape,
+  heightAboveGround: number,
+) {
+  const mat = new THREE.MeshLambertMaterial({ color: 0x7a5c1e })
+  const edges = getEdgeDims(shape)
+
+  for (const pl of planters) {
+    const edge = edges[pl.edgeIndex]
+    if (!edge) continue
+
+    // Planter sits on the ground, inner face touching the deck edge
+    const corners = getPlanterCorners(edge, pl)
+    // Centre in XZ is midpoint between inner and outer face along the outward normal
+    const innerCx = (corners[0].x + corners[1].x) / 2
+    const innerCz = (corners[0].y + corners[1].y) / 2
+    const cx = innerCx + (pl.boxDepth / 2) * edge.outNormal.x
+    const cz = innerCz + (pl.boxDepth / 2) * edge.outNormal.y
+
+    const mesh = new THREE.Mesh(
+      new THREE.BoxGeometry(pl.width, heightAboveGround, pl.boxDepth),
+      mat,
+    )
+    // Rotate so the box's width-axis aligns with the edge tangent
+    const tx = edge.to.x - edge.from.x
+    const tz = edge.to.y - edge.from.y
+    const tLen = Math.sqrt(tx * tx + tz * tz)
+    if (tLen > 0) mesh.rotation.y = -Math.atan2(tz / tLen, tx / tLen)
+    mesh.position.set(cx, heightAboveGround / 2, cz)
+    group.add(mesh)
+  }
+}
+
 export default function PerspectiveView() {
   const containerRef = useRef<HTMLDivElement>(null)
 
   const {
     wallLength, wallDirection, deckWidth, deckDepth,
     heightAboveGround, boardDirection, customShape,
+    stairs, planters,
   } = useDeckStore()
 
   useEffect(() => {
@@ -41,11 +148,9 @@ export default function PerspectiveView() {
     const W = container.clientWidth
     const H = container.clientHeight
 
-    // --- Scene ---
     const scene = new THREE.Scene()
     scene.background = new THREE.Color(0xeef2ee)
 
-    // --- Camera ---
     const shape: DeckShape = customShape ?? getDeckCorners({
       wallLength, wallDirection, deckWidth, deckDepth,
       heightAboveGround, boardDirection,
@@ -60,25 +165,21 @@ export default function PerspectiveView() {
     camera.position.set(sceneSize * 1.0, sceneSize * 0.9, sceneSize * 1.5)
     camera.lookAt(0, heightAboveGround / 2, midZ)
 
-    // --- Renderer ---
     const renderer = new THREE.WebGLRenderer({ antialias: true })
     renderer.setPixelRatio(window.devicePixelRatio)
     renderer.setSize(W, H)
     container.appendChild(renderer.domElement)
 
-    // --- Controls ---
     const controls = new OrbitControls(camera, renderer.domElement)
     controls.target.set(0, heightAboveGround / 2, midZ)
     controls.enableDamping = true
     controls.dampingFactor = 0.08
 
-    // --- Lights ---
     scene.add(new THREE.AmbientLight(0xffffff, 0.7))
     const sun = new THREE.DirectionalLight(0xffffff, 0.9)
     sun.position.set(5, 10, 8)
     scene.add(sun)
 
-    // --- Scene group (rotated by wall direction) ---
     const group = new THREE.Group()
     group.rotation.y = DIR_ANGLE[wallDirection]
     scene.add(group)
@@ -103,13 +204,12 @@ export default function PerspectiveView() {
     const deckGeo = buildDeckGeometry(shape, heightAboveGround)
     group.add(new THREE.Mesh(deckGeo, new THREE.MeshLambertMaterial({ color: 0xc8a46e })))
 
-    // Board lines on deck top surface
+    // Board lines
     const topY = heightAboveGround + 0.005
     const boardSegs = getBoardLinesForShape(shape, boardDirection)
     if (boardSegs.length > 0) {
       const verts: number[] = []
       for (const [a, b] of boardSegs) {
-        // shape coords: (x, y_shape) → 3D: (x, topY, y_shape) since depth = y_shape
         verts.push(a.x, topY, a.y, b.x, topY, b.y)
       }
       const geo = new THREE.BufferGeometry()
@@ -117,7 +217,12 @@ export default function PerspectiveView() {
       group.add(new THREE.LineSegments(geo, new THREE.LineBasicMaterial({ color: 0x7a5230 })))
     }
 
-    // --- Render loop ---
+    // Stairs
+    addStairs(group, stairs, shape, heightAboveGround)
+
+    // Planters
+    addPlanters(group, planters, shape, heightAboveGround)
+
     let animId: number
     const animate = () => {
       animId = requestAnimationFrame(animate)
@@ -126,7 +231,6 @@ export default function PerspectiveView() {
     }
     animate()
 
-    // --- Resize ---
     const ro = new ResizeObserver(() => {
       const w = container.clientWidth, h = container.clientHeight
       camera.aspect = w / h
@@ -142,7 +246,10 @@ export default function PerspectiveView() {
       renderer.dispose()
       if (container.contains(renderer.domElement)) container.removeChild(renderer.domElement)
     }
-  }, [wallLength, wallDirection, deckWidth, deckDepth, heightAboveGround, boardDirection, customShape])
+  }, [
+    wallLength, wallDirection, deckWidth, deckDepth, heightAboveGround, boardDirection,
+    customShape, stairs, planters,
+  ])
 
   return <div ref={containerRef} className="w-full h-full" />
 }
