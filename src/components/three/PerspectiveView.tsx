@@ -10,6 +10,7 @@ import {
 } from '@/utils/stairPlanter'
 import {
   JOIST_W, JOIST_H, BEAM_W, BEAM_H, POST_W, FOOTING_W, FOOTING_H,
+  MAX_CANTILEVER,
   getJoistXPositions, getPostXPositions, getBeamYPositions, beamXExtent, joistYExtent,
 } from '@/utils/structure'
 import type { DeckShape, WallDirection, Stair, PlanterBox } from '@/types/deck'
@@ -186,16 +187,31 @@ function addStructureLayers(
 
   if (maxLayer < 3) return
 
-  // --- Layer 3: joists clipped to shape at c/c 600 mm ---
+  // --- Layer 3: joists clipped to shape, capped at MAX_CANTILEVER past last beam ---
+  const ε = 0.001
   for (const jx of getJoistXPositions(minX, maxX)) {
     const ext = joistYExtent(shape, jx, minX, maxX)
     if (!ext) continue
-    const jLen = ext.maxY - ext.minY
+
+    // Find the outermost beam that is (a) within this joist's Y extent and
+    // (b) actually spans this X position — that beam is the last real support.
+    let outerBeamY = ext.minY
+    for (let bi = beamYs.length - 1; bi >= 0; bi--) {
+      const by = beamYs[bi]
+      if (by > ext.maxY + ε) continue
+      const bext = beamXExtent(shape, by, minY, maxY, minX, maxX)
+      if (bext.minX <= jx + ε && bext.maxX >= jx - ε) { outerBeamY = by; break }
+    }
+
+    const jMaxY = Math.min(ext.maxY, outerBeamY + MAX_CANTILEVER)
+    if (jMaxY <= ext.minY + ε) continue
+
+    const jLen = jMaxY - ext.minY
     const joist = new THREE.Mesh(
       new THREE.BoxGeometry(JOIST_W, JOIST_H, jLen),
       woodMat,
     )
-    joist.position.set(jx, joistCenterY, (ext.minY + ext.maxY) / 2)
+    joist.position.set(jx, joistCenterY, (ext.minY + jMaxY) / 2)
     group.add(joist)
   }
 }

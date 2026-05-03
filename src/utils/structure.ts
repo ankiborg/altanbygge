@@ -10,6 +10,7 @@ export const FOOTING_H      = 0.150
 export const JOIST_CC       = 0.600   // c/c 600 mm
 export const POST_CC        = 1.800   // max c/c 1800 mm between posts
 export const MAX_JOIST_SPAN = 2.000   // max 2 m between beam supports
+export const MAX_CANTILEVER = MAX_JOIST_SPAN / 4  // max 500 mm overhang past last beam
 
 // Evenly distributed positions (≤ cc spacing) from x0 to x1, always includes both ends
 export function spanPositions(x0: number, x1: number, cc: number): number[] {
