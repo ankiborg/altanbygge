@@ -10,7 +10,7 @@ import {
 } from '@/utils/stairPlanter'
 import {
   JOIST_W, JOIST_H, BEAM_W, BEAM_H, POST_W, FOOTING_W, FOOTING_H,
-  getJoistXPositions, getPostXPositions,
+  getJoistXPositions, getPostXPositions, getBeamYPositions, beamXExtent, joistYExtent,
 } from '@/utils/structure'
 import type { DeckShape, WallDirection, Stair, PlanterBox } from '@/types/deck'
 
@@ -126,7 +126,7 @@ function addPlanters(
 
 // Renders cumulative layers 1-maxLayer:
 //   1 = footings + posts
-//   2 = + ledger + outer beam
+//   2 = + all beams (ledger + intermediate + outer)
 //   3 = + joists
 function addStructureLayers(
   group: THREE.Group,
@@ -134,57 +134,68 @@ function addStructureLayers(
   heightAboveGround: number,
   maxLayer: 1 | 2 | 3,
 ) {
-  const woodMat    = new THREE.MeshLambertMaterial({ color: 0x8b6530 })
+  const woodMat     = new THREE.MeshLambertMaterial({ color: 0x8b6530 })
   const concreteMat = new THREE.MeshLambertMaterial({ color: 0xaaaaaa })
 
   const xs = shape.map(p => p.x)
   const ys = shape.map(p => p.y)
   const minX = Math.min(...xs), maxX = Math.max(...xs)
   const minY = Math.min(...ys), maxY = Math.max(...ys)
-  const spanX = maxX - minX
-  const spanY = maxY - minY
-  const midX = (minX + maxX) / 2
-  const midY = (minY + maxY) / 2
-
   const beamCenterY  = heightAboveGround - JOIST_H - BEAM_H / 2
   const joistCenterY = heightAboveGround - JOIST_H / 2
   const postH        = Math.max(0.01, heightAboveGround - JOIST_H - BEAM_H - FOOTING_H)
 
-  // --- Layer 1: footings + posts ---
-  for (const x of getPostXPositions(minX, maxX)) {
-    // Footing (concrete pad)
-    const footing = new THREE.Mesh(
-      new THREE.BoxGeometry(FOOTING_W, FOOTING_H, FOOTING_W),
-      concreteMat,
-    )
-    footing.position.set(x, FOOTING_H / 2, maxY)
-    group.add(footing)
+  // All beam Y positions: includes ledger (index 0) and outer beam (last index),
+  // with intermediate beams so no joist span exceeds MAX_JOIST_SPAN (2 m).
+  const beamYs = getBeamYPositions(minY, maxY)
 
-    // Post on top of footing
-    if (postH > 0) {
-      const post = new THREE.Mesh(new THREE.BoxGeometry(POST_W, postH, POST_W), woodMat)
-      post.position.set(x, FOOTING_H + postH / 2, maxY)
-      group.add(post)
+  // --- Layer 1: footings + posts under every non-ledger beam ---
+  for (let bi = 1; bi < beamYs.length; bi++) {
+    const by = beamYs[bi]
+    const ext = beamXExtent(shape, by, minY, maxY, minX, maxX)
+    for (const px of getPostXPositions(ext.minX, ext.maxX)) {
+      const footing = new THREE.Mesh(
+        new THREE.BoxGeometry(FOOTING_W, FOOTING_H, FOOTING_W),
+        concreteMat,
+      )
+      footing.position.set(px, FOOTING_H / 2, by)
+      group.add(footing)
+
+      if (postH > 0) {
+        const post = new THREE.Mesh(new THREE.BoxGeometry(POST_W, postH, POST_W), woodMat)
+        post.position.set(px, FOOTING_H + postH / 2, by)
+        group.add(post)
+      }
     }
   }
 
   if (maxLayer < 2) return
 
-  // --- Layer 2: ledger + outer beam ---
-  const ledger = new THREE.Mesh(new THREE.BoxGeometry(spanX, BEAM_H, BEAM_W), woodMat)
-  ledger.position.set(midX, beamCenterY, minY + BEAM_W / 2)
-  group.add(ledger)
-
-  const outerBeam = new THREE.Mesh(new THREE.BoxGeometry(spanX, BEAM_H, BEAM_W), woodMat)
-  outerBeam.position.set(midX, beamCenterY, maxY)
-  group.add(outerBeam)
+  // --- Layer 2: all beams clipped to shape ---
+  for (let bi = 0; bi < beamYs.length; bi++) {
+    const by = beamYs[bi]
+    const ext = beamXExtent(shape, by, minY, maxY, minX, maxX)
+    const bw = ext.maxX - ext.minX
+    const bMidX = (ext.minX + ext.maxX) / 2
+    // Ledger (bi=0): front face flush with wall (y = minY)
+    const bz = bi === 0 ? minY + BEAM_W / 2 : by
+    const beam = new THREE.Mesh(new THREE.BoxGeometry(bw, BEAM_H, BEAM_W), woodMat)
+    beam.position.set(bMidX, beamCenterY, bz)
+    group.add(beam)
+  }
 
   if (maxLayer < 3) return
 
-  // --- Layer 3: joists ---
-  for (const x of getJoistXPositions(minX, maxX)) {
-    const joist = new THREE.Mesh(new THREE.BoxGeometry(JOIST_W, JOIST_H, spanY), woodMat)
-    joist.position.set(x, joistCenterY, midY)
+  // --- Layer 3: joists clipped to shape at c/c 600 mm ---
+  for (const jx of getJoistXPositions(minX, maxX)) {
+    const ext = joistYExtent(shape, jx, minX, maxX)
+    if (!ext) continue
+    const jLen = ext.maxY - ext.minY
+    const joist = new THREE.Mesh(
+      new THREE.BoxGeometry(JOIST_W, JOIST_H, jLen),
+      woodMat,
+    )
+    joist.position.set(jx, joistCenterY, (ext.minY + ext.maxY) / 2)
     group.add(joist)
   }
 }

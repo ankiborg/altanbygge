@@ -9,7 +9,7 @@ import {
   isValidCornerForStair,
   getPlanterCorners,
 } from '@/utils/stairPlanter'
-import { getPostXPositions, POST_W } from '@/utils/structure'
+import { getPostXPositions, getBeamYPositions, beamXExtent, POST_W } from '@/utils/structure'
 import type { DeckConfig, DeckShape, Point, Stair, PlanterBox } from '@/types/deck'
 
 // ---------------------------------------------------------------------------
@@ -440,22 +440,29 @@ function drawPlan(
     }
   }
 
-  // --- Post positions (structure mode) ---
+  // --- Post positions (structure mode) — shown under every non-ledger beam ---
   if (!isDrawingMode && extras.viewLayer < 4 && shape.length >= 3) {
     const sxs = shape.map(p => p.x), sys = shape.map(p => p.y)
     const minX = Math.min(...sxs), maxX = Math.max(...sxs)
-    const maxY = Math.max(...sys)
+    const minY = Math.min(...sys), maxY = Math.max(...sys)
     const halfW = (POST_W / 2) * scale
+    const beamYs = getBeamYPositions(minY, maxY)
+
     ctx.save()
     ctx.fillStyle = '#5a4010'
     ctx.strokeStyle = '#3a2800'
     ctx.lineWidth = 1
-    for (const px of getPostXPositions(minX, maxX)) {
-      const cp = toCanvas({ x: px, y: maxY }, scale, origin)
-      ctx.beginPath()
-      ctx.rect(cp.x - halfW, cp.y - halfW, halfW * 2, halfW * 2)
-      ctx.fill()
-      ctx.stroke()
+
+    for (let bi = 1; bi < beamYs.length; bi++) {  // skip ledger (bi = 0)
+      const by = beamYs[bi]
+      const ext = beamXExtent(shape, by, minY, maxY, minX, maxX)
+      for (const px of getPostXPositions(ext.minX, ext.maxX)) {
+        const cp = toCanvas({ x: px, y: by }, scale, origin)
+        ctx.beginPath()
+        ctx.rect(cp.x - halfW, cp.y - halfW, halfW * 2, halfW * 2)
+        ctx.fill()
+        ctx.stroke()
+      }
     }
     ctx.restore()
   }
