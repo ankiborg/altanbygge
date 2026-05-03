@@ -29,7 +29,9 @@ const LAYERS = [
   { level: 4 as const, label: 'Trall' },
 ]
 
-// Parallelogram slab for corner stairs — works at any corner angle
+// Corner stair slab — outer corner is the intersection of the two offset lines
+// (one parallel to each edge at depth d), not their vector sum, so the shape
+// never arrows out at non-90° corners.
 function buildCornerStepGeo(
   anchor: { x: number; y: number },
   nA: { x: number; y: number },
@@ -38,12 +40,22 @@ function buildCornerStepGeo(
   slabH: number,
 ): THREE.BufferGeometry {
   const d = (step + 1) * STEP_DEPTH
+  const det = nA.y * nB.x - nA.x * nB.y
+  let ox: number, oy: number
+  if (Math.abs(det) < 0.001) {
+    ox = anchor.x + d * nA.x + d * nB.x
+    oy = anchor.y + d * nA.y + d * nB.y
+  } else {
+    const t = d * (1 - (nA.x * nB.x + nA.y * nB.y)) / det
+    ox = anchor.x + d * nA.x + t * nA.y
+    oy = anchor.y + d * nA.y - t * nA.x
+  }
   // Shape in XY plane (world_x, -world_y) — same convention as buildDeckGeometry
   const s = new THREE.Shape([
-    new THREE.Vector2(anchor.x,                    -anchor.y),
-    new THREE.Vector2(anchor.x + d*nA.x,           -(anchor.y + d*nA.y)),
-    new THREE.Vector2(anchor.x + d*nA.x + d*nB.x,  -(anchor.y + d*nA.y + d*nB.y)),
-    new THREE.Vector2(anchor.x + d*nB.x,           -(anchor.y + d*nB.y)),
+    new THREE.Vector2(anchor.x,          -anchor.y),
+    new THREE.Vector2(anchor.x + d*nA.x, -(anchor.y + d*nA.y)),
+    new THREE.Vector2(ox,                -oy),
+    new THREE.Vector2(anchor.x + d*nB.x, -(anchor.y + d*nB.y)),
   ])
   const geo = new THREE.ExtrudeGeometry(s, { depth: slabH, bevelEnabled: false })
   geo.rotateX(-Math.PI / 2)

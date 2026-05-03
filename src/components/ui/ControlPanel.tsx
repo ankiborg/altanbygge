@@ -240,19 +240,23 @@ export default function ControlPanel() {
             </p>
 
             <div className="space-y-1.5">
-              {edges.map((edge, i) => {
-                if (edge.from.y < 0.001 && edge.to.y < 0.001) return null
-                return (
-                  <div key={i} className="flex items-center gap-2">
-                    <span className="text-xs text-muted-foreground w-14 shrink-0">Sida {i + 1}</span>
-                    <EdgeLengthInput
-                      length={edge.length}
-                      onCommit={v => store.updateCustomShapeEdge(i, v)}
-                    />
-                    <span className="text-xs text-muted-foreground">m</span>
-                  </div>
-                )
-              })}
+              {(() => {
+                let sideNum = 0
+                return edges.map((edge, i) => {
+                  if (edge.from.y < 0.001 && edge.to.y < 0.001) return null
+                  sideNum++
+                  return (
+                    <div key={i} className="flex items-center gap-2">
+                      <span className="text-xs text-muted-foreground w-14 shrink-0">Sida {sideNum}</span>
+                      <EdgeLengthInput
+                        length={edge.length}
+                        onCommit={v => store.updateCustomShapeEdge(i, v)}
+                      />
+                      <span className="text-xs text-muted-foreground">m</span>
+                    </div>
+                  )
+                })
+              })()}
             </div>
 
             <button

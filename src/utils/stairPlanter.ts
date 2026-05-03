@@ -80,6 +80,21 @@ export function getStairLabelPos(edge: EdgeDim, stair: Stair, steps: number): Po
 // Corner stair helpers
 // ---------------------------------------------------------------------------
 
+// True outer corner at depth d: intersection of the two offset lines (each
+// parallel to one edge, shifted outward by d). For 90° this equals
+// anchor + d*nA + d*nB; for other angles the naive sum would create an arrow.
+function cornerOuter(anchor: Point, nA: Point, nB: Point, d: number): Point {
+  const det = nA.y * nB.x - nA.x * nB.y
+  if (Math.abs(det) < 0.001) {
+    return { x: anchor.x + d * nA.x + d * nB.x, y: anchor.y + d * nA.y + d * nB.y }
+  }
+  const t = d * (1 - (nA.x * nB.x + nA.y * nB.y)) / det
+  return {
+    x: anchor.x + d * nA.x + t * nA.y,
+    y: anchor.y + d * nA.y - t * nA.x,
+  }
+}
+
 // Bisector of outward normals of the two edges meeting at cornerIndex
 export function getCornerBisector(edges: EdgeDim[], cornerIndex: number, n: number): Point {
   // Edge cornerIndex runs FROM shape[cornerIndex]; the incoming edge is (cornerIndex-1+n)%n
@@ -105,9 +120,9 @@ export function getCornerStairCorners(
 
   return [
     anchor,
-    { x: anchor.x + d * nA.x,             y: anchor.y + d * nA.y },
-    { x: anchor.x + d * nA.x + d * nB.x,  y: anchor.y + d * nA.y + d * nB.y },
-    { x: anchor.x + d * nB.x,             y: anchor.y + d * nB.y },
+    { x: anchor.x + d * nA.x, y: anchor.y + d * nA.y },
+    cornerOuter(anchor, nA, nB, d),
+    { x: anchor.x + d * nB.x, y: anchor.y + d * nB.y },
   ]
 }
 
@@ -125,11 +140,11 @@ export function getCornerStairTreadLines(
 
   for (let s = 1; s <= steps; s++) {
     const d = s * STEP_DEPTH
-    const pA  = { x: anchor.x + d * nA.x,             y: anchor.y + d * nA.y }
-    const pAB = { x: anchor.x + d * nA.x + d * nB.x,  y: anchor.y + d * nA.y + d * nB.y }
-    const pB  = { x: anchor.x + d * nB.x,             y: anchor.y + d * nB.y }
-    lines.push([pA, pAB])
-    lines.push([pAB, pB])
+    const pA   = { x: anchor.x + d * nA.x, y: anchor.y + d * nA.y }
+    const pOut = cornerOuter(anchor, nA, nB, d)
+    const pB   = { x: anchor.x + d * nB.x, y: anchor.y + d * nB.y }
+    lines.push([pA, pOut])
+    lines.push([pOut, pB])
   }
   return lines
 }
@@ -145,9 +160,10 @@ export function getCornerStairLabelPos(
   const nA = edges[(stair.cornerIndex - 1 + n) % n].outNormal
   const nB = edges[stair.cornerIndex].outNormal
   const d = steps * STEP_DEPTH
+  const outer = cornerOuter(anchor, nA, nB, d)
   return {
-    x: anchor.x + (d * nA.x + d * nB.x) / 2,
-    y: anchor.y + (d * nA.y + d * nB.y) / 2,
+    x: (anchor.x + outer.x) / 2,
+    y: (anchor.y + outer.y) / 2,
   }
 }
 
@@ -157,10 +173,7 @@ export function getCornerStairLabelPos(
 export function isValidCornerForStair(edges: EdgeDim[], cornerIndex: number, n: number): boolean {
   const prev = edges[(cornerIndex - 1 + n) % n]
   const curr = edges[cornerIndex]
-  if (isWallEdge(prev) || isWallEdge(curr)) return false
-  const nA = prev.outNormal, nB = curr.outNormal
-  const cross = nA.x * nB.y - nA.y * nB.x
-  return cross > 0.1  // outward-facing convex corner
+  return !isWallEdge(prev) && !isWallEdge(curr)
 }
 
 // ---------------------------------------------------------------------------

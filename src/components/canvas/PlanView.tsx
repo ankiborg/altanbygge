@@ -314,6 +314,7 @@ interface DrawExtras {
   selectedStairId: string | null
   selectedPlanterId: string | null
   viewLayer: number
+  showEdgeLabels: boolean
 }
 
 function drawPlan(
@@ -519,6 +520,32 @@ function drawPlan(
     drawExtLine(ctx, wl.x, wl.y, wl.x, dimY1)
     drawExtLine(ctx, wr.x, wr.y, wr.x, dimY1)
     drawDim(ctx, wl.x, dimY1, wr.x, dimY1, `${cfg.wallLength.toFixed(1)} m`)
+
+    // --- Side number badges (when custom shape is active) ---
+    if (extras.showEdgeLabels && shape.length >= 3) {
+      const BADGE_R = 9
+      const LABEL_OFFSET = 22
+      let sideNum = 0
+      for (const edge of getEdgeDims(shape)) {
+        const isWall = edge.from.y < 0.001 && edge.to.y < 0.001
+        if (isWall) continue
+        sideNum++
+        const cm = toCanvas(edge.mid, scale, origin)
+        const bx = cm.x + edge.outNormal.x * LABEL_OFFSET
+        const by = cm.y + edge.outNormal.y * LABEL_OFFSET
+        ctx.save()
+        ctx.beginPath()
+        ctx.arc(bx, by, BADGE_R, 0, Math.PI * 2)
+        ctx.fillStyle = '#2563eb'
+        ctx.fill()
+        ctx.fillStyle = '#fff'
+        ctx.font = 'bold 10px sans-serif'
+        ctx.textAlign = 'center'
+        ctx.textBaseline = 'middle'
+        ctx.fillText(String(sideNum), bx, by)
+        ctx.restore()
+      }
+    }
   }
 
   // --- In-progress drawing ---
@@ -683,6 +710,7 @@ export default function PlanView() {
     placingStair, placingPlanter,
     selectedStairId, selectedPlanterId,
     viewLayer,
+    showEdgeLabels: !!customShape,
   }
 
   function redraw(cursor = cursorRef.current, hoverTarget = hoverTargetRef.current) {
