@@ -147,7 +147,7 @@ function addStructureLayers(
 
   // All beam Y positions: includes ledger (index 0) and outer beam (last index),
   // with intermediate beams so no joist span exceeds MAX_JOIST_SPAN (2 m).
-  const beamYs = getBeamYPositions(minY, maxY)
+  const beamYs = getBeamYPositions(minY, maxY, shape)
 
   // --- Layer 1: footings + posts under every non-ledger beam ---
   for (let bi = 1; bi < beamYs.length; bi++) {

@@ -446,7 +446,7 @@ function drawPlan(
     const minX = Math.min(...sxs), maxX = Math.max(...sxs)
     const minY = Math.min(...sys), maxY = Math.max(...sys)
     const halfW = (POST_W / 2) * scale
-    const beamYs = getBeamYPositions(minY, maxY)
+    const beamYs = getBeamYPositions(minY, maxY, shape)
 
     ctx.save()
     ctx.fillStyle = '#5a4010'

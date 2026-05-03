@@ -27,9 +27,29 @@ export function getPostXPositions(minX: number, maxX: number): number[] {
 
 // All beam Y positions (parallel to wall), spaced so no joist span exceeds MAX_JOIST_SPAN.
 // Index 0 = ledger (at wall), last = outer beam.
-export function getBeamYPositions(minY: number, maxY: number): number[] {
+// When shape is provided, also inserts a beam at every horizontal edge (L/U-shape steps)
+// so the corner of the narrower section is always supported.
+export function getBeamYPositions(minY: number, maxY: number, shape?: Point[]): number[] {
   const n = Math.max(1, Math.ceil((maxY - minY) / MAX_JOIST_SPAN))
-  return Array.from({ length: n + 1 }, (_, i) => minY + (i / n) * (maxY - minY))
+  const evenly = Array.from({ length: n + 1 }, (_, i) => minY + (i / n) * (maxY - minY))
+
+  if (!shape) return evenly
+
+  const ε = 0.001
+  const stepYs: number[] = []
+  const len = shape.length
+  for (let i = 0; i < len; i++) {
+    const a = shape[i], b = shape[(i + 1) % len]
+    if (Math.abs(a.y - b.y) < ε) {
+      const y = (a.y + b.y) / 2
+      if (y > minY + ε && y < maxY - ε) stepYs.push(y)
+    }
+  }
+
+  if (stepYs.length === 0) return evenly
+
+  const all = [...evenly, ...stepYs].sort((a, b) => a - b)
+  return all.filter((y, i) => i === 0 || Math.abs(y - all[i - 1]) > ε)
 }
 
 // X extent of the deck polygon at a given Y scanline (for clipping beams to shape).
