@@ -313,7 +313,7 @@ interface DrawExtras {
   placingPlanter: boolean
   selectedStairId: string | null
   selectedPlanterId: string | null
-  showStructure: boolean
+  viewLayer: number
 }
 
 function drawPlan(
@@ -441,7 +441,7 @@ function drawPlan(
   }
 
   // --- Post positions (structure mode) ---
-  if (!isDrawingMode && extras.showStructure && shape.length >= 3) {
+  if (!isDrawingMode && extras.viewLayer < 4 && shape.length >= 3) {
     const sxs = shape.map(p => p.x), sys = shape.map(p => p.y)
     const minX = Math.min(...sxs), maxX = Math.max(...sxs)
     const maxY = Math.max(...sys)
@@ -662,7 +662,7 @@ export default function PlanView() {
     wallLength, wallDirection, deckWidth, deckDepth, heightAboveGround, boardDirection,
     customShape, drawingPoints, isDrawingMode,
     stairs, planters, placingStair, placingPlanter, selectedStairId, selectedPlanterId,
-    showStructure,
+    viewLayer,
     addDrawingPoint, finishDrawing,
     addStair, addPlanter, selectStair, selectPlanter, clearSelection,
   } = useDeckStore()
@@ -675,7 +675,7 @@ export default function PlanView() {
     hoverTarget: hoverTargetRef.current,
     placingStair, placingPlanter,
     selectedStairId, selectedPlanterId,
-    showStructure,
+    viewLayer,
   }
 
   function redraw(cursor = cursorRef.current, hoverTarget = hoverTargetRef.current) {
@@ -704,7 +704,7 @@ export default function PlanView() {
     wallLength, wallDirection, deckWidth, deckDepth, heightAboveGround, boardDirection,
     customShape, drawingPoints, isDrawingMode,
     stairs, planters, placingStair, placingPlanter, selectedStairId, selectedPlanterId,
-    showStructure,
+    viewLayer,
   ])
 
   function worldFromEvent(e: React.MouseEvent<HTMLCanvasElement>): Point {

@@ -42,8 +42,8 @@ interface DeckStore extends DeckConfig {
   selectPlanter: (id: string) => void
   clearSelection: () => void
 
-  showStructure: boolean
-  toggleStructure: () => void
+  viewLayer: 1 | 2 | 3 | 4
+  setViewLayer: (layer: 1 | 2 | 3 | 4) => void
 }
 
 export const useDeckStore = create<DeckStore>()((set, get) => ({
@@ -103,6 +103,6 @@ export const useDeckStore = create<DeckStore>()((set, get) => ({
   selectPlanter: (id) => set({ selectedPlanterId: id, selectedStairId: null }),
   clearSelection: () => set({ selectedStairId: null, selectedPlanterId: null }),
 
-  showStructure: false,
-  toggleStructure: () => set((s) => ({ showStructure: !s.showStructure })),
+  viewLayer: 4,
+  setViewLayer: (layer) => set({ viewLayer: layer }),
 }))

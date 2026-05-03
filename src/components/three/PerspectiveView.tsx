@@ -9,7 +9,7 @@ import {
   STEP_RISE, STEP_DEPTH,
 } from '@/utils/stairPlanter'
 import {
-  JOIST_W, JOIST_H, BEAM_W, BEAM_H, POST_W,
+  JOIST_W, JOIST_H, BEAM_W, BEAM_H, POST_W, FOOTING_W, FOOTING_H,
   getJoistXPositions, getPostXPositions,
 } from '@/utils/structure'
 import type { DeckShape, WallDirection, Stair, PlanterBox } from '@/types/deck'
@@ -20,6 +20,13 @@ const DIR_ANGLE: Record<WallDirection, number> = {
   north: Math.PI,
   east:  -Math.PI / 2,
 }
+
+const LAYERS = [
+  { level: 1 as const, label: 'Plintar' },
+  { level: 2 as const, label: 'Balkar' },
+  { level: 3 as const, label: 'Reglar' },
+  { level: 4 as const, label: 'Trall' },
+]
 
 function buildDeckGeometry(shape: DeckShape, height: number): THREE.BufferGeometry {
   const s = new THREE.Shape()
@@ -49,17 +56,12 @@ function addStairs(
       if (!anchor) continue
       const nA = edges[(stair.cornerIndex - 1 + n) % n].outNormal
       const nB = edges[stair.cornerIndex].outNormal
-      // Rotate box so local X → nA, local Z → nB
       const rotY = Math.atan2(-nA.y, nA.x)
 
-      // Each slab is a growing square filling the corner: s=0 is closest (smallest)
       for (let s = 0; s < steps; s++) {
         const size = (s + 1) * STEP_DEPTH
         const slabH = Math.max(0.01, heightAboveGround - (s + 1) * STEP_RISE)
-        const mesh = new THREE.Mesh(
-          new THREE.BoxGeometry(size, slabH, size),
-          mat,
-        )
+        const mesh = new THREE.Mesh(new THREE.BoxGeometry(size, slabH, size), mat)
         mesh.rotation.y = rotY
         mesh.position.set(
           anchor.x + (size / 2) * nA.x + (size / 2) * nB.x,
@@ -81,20 +83,12 @@ function addStairs(
       const tLen = Math.sqrt(tx * tx + tz * tz)
       const rotY = tLen > 0 ? -Math.atan2(tz / tLen, tx / tLen) : 0
 
-      // Slab approach: s=0 is the step closest to the deck (one step below it)
       for (let s = 0; s < steps; s++) {
         const distFromEdge = (s + 0.5) * STEP_DEPTH
         const slabH = Math.max(0.01, heightAboveGround - (s + 1) * STEP_RISE)
-        const mesh = new THREE.Mesh(
-          new THREE.BoxGeometry(stair.width, slabH, STEP_DEPTH),
-          mat,
-        )
+        const mesh = new THREE.Mesh(new THREE.BoxGeometry(stair.width, slabH, STEP_DEPTH), mat)
         mesh.rotation.y = rotY
-        mesh.position.set(
-          cx + nx * distFromEdge,
-          slabH / 2,
-          cz + nz * distFromEdge,
-        )
+        mesh.position.set(cx + nx * distFromEdge, slabH / 2, cz + nz * distFromEdge)
         group.add(mesh)
       }
     }
@@ -114,19 +108,13 @@ function addPlanters(
     const edge = edges[pl.edgeIndex]
     if (!edge) continue
 
-    // Planter sits on the ground, inner face touching the deck edge
     const corners = getPlanterCorners(edge, pl)
-    // Centre in XZ is midpoint between inner and outer face along the outward normal
     const innerCx = (corners[0].x + corners[1].x) / 2
     const innerCz = (corners[0].y + corners[1].y) / 2
     const cx = innerCx + (pl.boxDepth / 2) * edge.outNormal.x
     const cz = innerCz + (pl.boxDepth / 2) * edge.outNormal.y
 
-    const mesh = new THREE.Mesh(
-      new THREE.BoxGeometry(pl.width, heightAboveGround, pl.boxDepth),
-      mat,
-    )
-    // Rotate so the box's width-axis aligns with the edge tangent
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(pl.width, heightAboveGround, pl.boxDepth), mat)
     const tx = edge.to.x - edge.from.x
     const tz = edge.to.y - edge.from.y
     const tLen = Math.sqrt(tx * tx + tz * tz)
@@ -136,12 +124,18 @@ function addPlanters(
   }
 }
 
-function addStructure(
+// Renders cumulative layers 1-maxLayer:
+//   1 = footings + posts
+//   2 = + ledger + outer beam
+//   3 = + joists
+function addStructureLayers(
   group: THREE.Group,
   shape: DeckShape,
   heightAboveGround: number,
+  maxLayer: 1 | 2 | 3,
 ) {
-  const mat = new THREE.MeshLambertMaterial({ color: 0x8b6530 })
+  const woodMat    = new THREE.MeshLambertMaterial({ color: 0x8b6530 })
+  const concreteMat = new THREE.MeshLambertMaterial({ color: 0xaaaaaa })
 
   const xs = shape.map(p => p.x)
   const ys = shape.map(p => p.y)
@@ -152,44 +146,46 @@ function addStructure(
   const midX = (minX + maxX) / 2
   const midY = (minY + maxY) / 2
 
-  const joistCenterY = heightAboveGround - JOIST_H / 2
   const beamCenterY  = heightAboveGround - JOIST_H - BEAM_H / 2
-  const postH        = Math.max(0.01, heightAboveGround - JOIST_H - BEAM_H)
+  const joistCenterY = heightAboveGround - JOIST_H / 2
+  const postH        = Math.max(0.01, heightAboveGround - JOIST_H - BEAM_H - FOOTING_H)
 
-  // Ledger along wall (z = minY)
-  const ledger = new THREE.Mesh(
-    new THREE.BoxGeometry(spanX, BEAM_H, BEAM_W),
-    mat,
-  )
+  // --- Layer 1: footings + posts ---
+  for (const x of getPostXPositions(minX, maxX)) {
+    // Footing (concrete pad)
+    const footing = new THREE.Mesh(
+      new THREE.BoxGeometry(FOOTING_W, FOOTING_H, FOOTING_W),
+      concreteMat,
+    )
+    footing.position.set(x, FOOTING_H / 2, maxY)
+    group.add(footing)
+
+    // Post on top of footing
+    if (postH > 0) {
+      const post = new THREE.Mesh(new THREE.BoxGeometry(POST_W, postH, POST_W), woodMat)
+      post.position.set(x, FOOTING_H + postH / 2, maxY)
+      group.add(post)
+    }
+  }
+
+  if (maxLayer < 2) return
+
+  // --- Layer 2: ledger + outer beam ---
+  const ledger = new THREE.Mesh(new THREE.BoxGeometry(spanX, BEAM_H, BEAM_W), woodMat)
   ledger.position.set(midX, beamCenterY, minY + BEAM_W / 2)
   group.add(ledger)
 
-  // Outer beam (z = maxY)
-  const outerBeam = new THREE.Mesh(
-    new THREE.BoxGeometry(spanX, BEAM_H, BEAM_W),
-    mat,
-  )
+  const outerBeam = new THREE.Mesh(new THREE.BoxGeometry(spanX, BEAM_H, BEAM_W), woodMat)
   outerBeam.position.set(midX, beamCenterY, maxY)
   group.add(outerBeam)
 
-  // Joists spanning from wall to outer edge
+  if (maxLayer < 3) return
+
+  // --- Layer 3: joists ---
   for (const x of getJoistXPositions(minX, maxX)) {
-    const joist = new THREE.Mesh(
-      new THREE.BoxGeometry(JOIST_W, JOIST_H, spanY),
-      mat,
-    )
+    const joist = new THREE.Mesh(new THREE.BoxGeometry(JOIST_W, JOIST_H, spanY), woodMat)
     joist.position.set(x, joistCenterY, midY)
     group.add(joist)
-  }
-
-  // Posts under outer beam
-  for (const x of getPostXPositions(minX, maxX)) {
-    const post = new THREE.Mesh(
-      new THREE.BoxGeometry(POST_W, postH, POST_W),
-      mat,
-    )
-    post.position.set(x, postH / 2, maxY)
-    group.add(post)
   }
 }
 
@@ -199,7 +195,7 @@ export default function PerspectiveView() {
   const {
     wallLength, wallDirection, deckWidth, deckDepth,
     heightAboveGround, boardDirection, customShape,
-    stairs, planters, showStructure, toggleStructure,
+    stairs, planters, viewLayer, setViewLayer,
   } = useDeckStore()
 
   useEffect(() => {
@@ -246,12 +242,11 @@ export default function PerspectiveView() {
     scene.add(group)
 
     // Ground
-    const ground = new THREE.Mesh(
+    group.add(new THREE.Mesh(
       new THREE.PlaneGeometry(40, 40),
       new THREE.MeshLambertMaterial({ color: 0xc8d8b0 }),
-    )
-    ground.rotation.x = -Math.PI / 2
-    group.add(ground)
+    ))
+    group.children[0]!.rotation.x = -Math.PI / 2
 
     // House wall
     const wallMesh = new THREE.Mesh(
@@ -261,33 +256,29 @@ export default function PerspectiveView() {
     wallMesh.position.set(0, 1.5, -0.1)
     group.add(wallMesh)
 
-    // Structure (joists, beams, posts) — rendered before deck so it shows through
-    if (showStructure) {
-      addStructure(group, shape, heightAboveGround)
-    }
+    if (viewLayer <= 3) {
+      // Structure layers (no deck surface — so everything is visible)
+      addStructureLayers(group, shape, heightAboveGround, viewLayer as 1 | 2 | 3)
+      addStairs(group, stairs, shape, heightAboveGround)
+      addPlanters(group, planters, shape, heightAboveGround)
+    } else {
+      // Layer 4: full deck with boards
+      const deckGeo = buildDeckGeometry(shape, heightAboveGround)
+      group.add(new THREE.Mesh(deckGeo, new THREE.MeshLambertMaterial({ color: 0xc8a46e })))
 
-    // Deck
-    const deckGeo = buildDeckGeometry(shape, heightAboveGround)
-    group.add(new THREE.Mesh(deckGeo, new THREE.MeshLambertMaterial({ color: 0xc8a46e })))
-
-    // Board lines
-    const topY = heightAboveGround + 0.005
-    const boardSegs = getBoardLinesForShape(shape, boardDirection)
-    if (boardSegs.length > 0) {
-      const verts: number[] = []
-      for (const [a, b] of boardSegs) {
-        verts.push(a.x, topY, a.y, b.x, topY, b.y)
+      const topY = heightAboveGround + 0.005
+      const boardSegs = getBoardLinesForShape(shape, boardDirection)
+      if (boardSegs.length > 0) {
+        const verts: number[] = []
+        for (const [a, b] of boardSegs) verts.push(a.x, topY, a.y, b.x, topY, b.y)
+        const geo = new THREE.BufferGeometry()
+        geo.setAttribute('position', new THREE.Float32BufferAttribute(verts, 3))
+        group.add(new THREE.LineSegments(geo, new THREE.LineBasicMaterial({ color: 0x7a5230 })))
       }
-      const geo = new THREE.BufferGeometry()
-      geo.setAttribute('position', new THREE.Float32BufferAttribute(verts, 3))
-      group.add(new THREE.LineSegments(geo, new THREE.LineBasicMaterial({ color: 0x7a5230 })))
+
+      addStairs(group, stairs, shape, heightAboveGround)
+      addPlanters(group, planters, shape, heightAboveGround)
     }
-
-    // Stairs
-    addStairs(group, stairs, shape, heightAboveGround)
-
-    // Planters
-    addPlanters(group, planters, shape, heightAboveGround)
 
     let animId: number
     const animate = () => {
@@ -314,18 +305,29 @@ export default function PerspectiveView() {
     }
   }, [
     wallLength, wallDirection, deckWidth, deckDepth, heightAboveGround, boardDirection,
-    customShape, stairs, planters, showStructure,
+    customShape, stairs, planters, viewLayer,
   ])
 
   return (
     <div className="relative w-full h-full">
       <div ref={containerRef} className="w-full h-full" />
-      <button
-        className="absolute bottom-3 right-3 rounded-md border border-white/30 bg-black/25 px-3 py-1.5 text-xs text-white backdrop-blur-sm hover:bg-black/40 transition-colors"
-        onClick={toggleStructure}
-      >
-        {showStructure ? 'Dölj konstruktion' : 'Visa konstruktion'}
-      </button>
+      <div className="absolute bottom-3 right-3 flex overflow-hidden rounded-md border border-white/30 text-xs">
+        {LAYERS.map((l, i) => (
+          <button
+            key={l.level}
+            className={`px-3 py-1.5 transition-colors ${
+              i > 0 ? 'border-l border-white/30' : ''
+            } ${
+              viewLayer === l.level
+                ? 'bg-white/90 text-gray-800 font-medium'
+                : 'bg-black/25 text-white hover:bg-black/40'
+            }`}
+            onClick={() => setViewLayer(l.level)}
+          >
+            {l.label}
+          </button>
+        ))}
+      </div>
     </div>
   )
 }
