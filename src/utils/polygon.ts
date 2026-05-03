@@ -1,5 +1,48 @@
 import type { Point, DeckShape, BoardDirection } from '@/types/deck'
 
+// Resize edge i to newLength by translating the downstream (or upstream) non-wall
+// vertices so that orthogonal shapes stay orthogonal.
+export function resizeEdge(shape: DeckShape, edgeIndex: number, newLength: number): DeckShape {
+  const n = shape.length
+  const from = shape[edgeIndex]
+  const to   = shape[(edgeIndex + 1) % n]
+  const dx = to.x - from.x, dy = to.y - from.y
+  const oldLen = Math.sqrt(dx * dx + dy * dy)
+  if (oldLen < 0.001 || newLength < 0.1) return shape
+
+  const delta   = newLength - oldLen
+  const dir     = { x: dx / oldLen, y: dy / oldLen }
+  const moveVec = { x: dir.x * delta, y: dir.y * delta }
+  const ε       = 0.001
+
+  const next = shape.map(p => ({ ...p }))
+
+  if (to.y < ε && from.y >= ε) {
+    // Edge ends at the wall → move `from` away from wall and propagate upstream
+    const back = { x: -moveVec.x, y: -moveVec.y }
+    let i = edgeIndex
+    while (true) {
+      if (next[i].y >= ε) {
+        next[i] = { x: next[i].x + back.x, y: next[i].y + back.y }
+      } else break
+      const prev = (i - 1 + n) % n
+      if (prev === (edgeIndex + 1) % n) break
+      i = prev
+    }
+  } else {
+    // Normal: move `to` and propagate downstream, stop at wall
+    let i = (edgeIndex + 1) % n
+    while (i !== edgeIndex) {
+      if (next[i].y >= ε) {
+        next[i] = { x: next[i].x + moveVec.x, y: next[i].y + moveVec.y }
+      } else break
+      i = (i + 1) % n
+    }
+  }
+
+  return next
+}
+
 export function snapToGrid(p: Point, gridSize: number): Point {
   return {
     x: Math.round(p.x / gridSize) * gridSize,

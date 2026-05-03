@@ -1,3 +1,4 @@
+import React from 'react'
 import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
@@ -18,6 +19,27 @@ const BOARD_DIRECTIONS: { value: BoardDirection; label: string }[] = [
   { value: 'perpendicular', label: 'Vinkelrätt mot väggen' },
   { value: 'parallel',      label: 'Parallellt med väggen' },
 ]
+
+function EdgeLengthInput({ length, onCommit }: { length: number; onCommit: (v: number) => void }) {
+  const [val, setVal] = React.useState(length.toFixed(2))
+  React.useEffect(() => { setVal(length.toFixed(2)) }, [length])
+
+  function commit() {
+    const n = parseFloat(val)
+    if (!isNaN(n) && n >= 0.1) onCommit(n)
+    else setVal(length.toFixed(2))
+  }
+
+  return (
+    <Input
+      type="number" min={0.1} step={0.1}
+      value={val}
+      onChange={e => setVal(e.target.value)}
+      onBlur={commit}
+      onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
+    />
+  )
+}
 
 export default function ControlPanel() {
   const store = useDeckStore()
@@ -201,6 +223,23 @@ export default function ControlPanel() {
             <p className="text-xs text-muted-foreground">
               Anpassad form · {store.customShape.length} hörn
             </p>
+
+            <div className="space-y-1.5">
+              {edges.map((edge, i) => {
+                if (edge.from.y < 0.001 && edge.to.y < 0.001) return null
+                return (
+                  <div key={i} className="flex items-center gap-2">
+                    <span className="text-xs text-muted-foreground w-14 shrink-0">Sida {i + 1}</span>
+                    <EdgeLengthInput
+                      length={edge.length}
+                      onCommit={v => store.updateCustomShapeEdge(i, v)}
+                    />
+                    <span className="text-xs text-muted-foreground">m</span>
+                  </div>
+                )
+              })}
+            </div>
+
             <button
               className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm hover:bg-accent transition-colors"
               onClick={store.startDrawing}

@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import type { DeckConfig, DeckShape, Point, WallDirection, BoardDirection, Stair, PlanterBox } from '@/types/deck'
+import { resizeEdge } from '@/utils/polygon'
 
 interface DeckStore extends DeckConfig {
   setWallLength: (value: number) => void
@@ -18,6 +19,7 @@ interface DeckStore extends DeckConfig {
   undoDrawingPoint: () => void
   finishDrawing: () => void
   clearCustomShape: () => void
+  updateCustomShapeEdge: (edgeIndex: number, newLength: number) => void
 
   stairs: Stair[]
   planters: PlanterBox[]
@@ -75,6 +77,11 @@ export const useDeckStore = create<DeckStore>()((set, get) => ({
   },
   clearCustomShape: () =>
     set({ customShape: null, drawingPoints: [], isDrawingMode: false }),
+  updateCustomShapeEdge: (edgeIndex, newLength) => {
+    const { customShape } = get()
+    if (!customShape) return
+    set({ customShape: resizeEdge(customShape, edgeIndex, newLength) })
+  },
 
   stairs: [],
   planters: [],
