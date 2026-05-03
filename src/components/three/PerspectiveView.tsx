@@ -8,6 +8,10 @@ import {
   numSteps, getStairCorners, getPlanterCorners,
   STEP_RISE, STEP_DEPTH,
 } from '@/utils/stairPlanter'
+import {
+  JOIST_W, JOIST_H, BEAM_W, BEAM_H, POST_W,
+  getJoistXPositions, getPostXPositions,
+} from '@/utils/structure'
 import type { DeckShape, WallDirection, Stair, PlanterBox } from '@/types/deck'
 
 const DIR_ANGLE: Record<WallDirection, number> = {
@@ -132,13 +136,70 @@ function addPlanters(
   }
 }
 
+function addStructure(
+  group: THREE.Group,
+  shape: DeckShape,
+  heightAboveGround: number,
+) {
+  const mat = new THREE.MeshLambertMaterial({ color: 0x8b6530 })
+
+  const xs = shape.map(p => p.x)
+  const ys = shape.map(p => p.y)
+  const minX = Math.min(...xs), maxX = Math.max(...xs)
+  const minY = Math.min(...ys), maxY = Math.max(...ys)
+  const spanX = maxX - minX
+  const spanY = maxY - minY
+  const midX = (minX + maxX) / 2
+  const midY = (minY + maxY) / 2
+
+  const joistCenterY = heightAboveGround - JOIST_H / 2
+  const beamCenterY  = heightAboveGround - JOIST_H - BEAM_H / 2
+  const postH        = Math.max(0.01, heightAboveGround - JOIST_H - BEAM_H)
+
+  // Ledger along wall (z = minY)
+  const ledger = new THREE.Mesh(
+    new THREE.BoxGeometry(spanX, BEAM_H, BEAM_W),
+    mat,
+  )
+  ledger.position.set(midX, beamCenterY, minY + BEAM_W / 2)
+  group.add(ledger)
+
+  // Outer beam (z = maxY)
+  const outerBeam = new THREE.Mesh(
+    new THREE.BoxGeometry(spanX, BEAM_H, BEAM_W),
+    mat,
+  )
+  outerBeam.position.set(midX, beamCenterY, maxY)
+  group.add(outerBeam)
+
+  // Joists spanning from wall to outer edge
+  for (const x of getJoistXPositions(minX, maxX)) {
+    const joist = new THREE.Mesh(
+      new THREE.BoxGeometry(JOIST_W, JOIST_H, spanY),
+      mat,
+    )
+    joist.position.set(x, joistCenterY, midY)
+    group.add(joist)
+  }
+
+  // Posts under outer beam
+  for (const x of getPostXPositions(minX, maxX)) {
+    const post = new THREE.Mesh(
+      new THREE.BoxGeometry(POST_W, postH, POST_W),
+      mat,
+    )
+    post.position.set(x, postH / 2, maxY)
+    group.add(post)
+  }
+}
+
 export default function PerspectiveView() {
   const containerRef = useRef<HTMLDivElement>(null)
 
   const {
     wallLength, wallDirection, deckWidth, deckDepth,
     heightAboveGround, boardDirection, customShape,
-    stairs, planters,
+    stairs, planters, showStructure, toggleStructure,
   } = useDeckStore()
 
   useEffect(() => {
@@ -200,6 +261,11 @@ export default function PerspectiveView() {
     wallMesh.position.set(0, 1.5, -0.1)
     group.add(wallMesh)
 
+    // Structure (joists, beams, posts) — rendered before deck so it shows through
+    if (showStructure) {
+      addStructure(group, shape, heightAboveGround)
+    }
+
     // Deck
     const deckGeo = buildDeckGeometry(shape, heightAboveGround)
     group.add(new THREE.Mesh(deckGeo, new THREE.MeshLambertMaterial({ color: 0xc8a46e })))
@@ -248,8 +314,18 @@ export default function PerspectiveView() {
     }
   }, [
     wallLength, wallDirection, deckWidth, deckDepth, heightAboveGround, boardDirection,
-    customShape, stairs, planters,
+    customShape, stairs, planters, showStructure,
   ])
 
-  return <div ref={containerRef} className="w-full h-full" />
+  return (
+    <div className="relative w-full h-full">
+      <div ref={containerRef} className="w-full h-full" />
+      <button
+        className="absolute bottom-3 right-3 rounded-md border border-white/30 bg-black/25 px-3 py-1.5 text-xs text-white backdrop-blur-sm hover:bg-black/40 transition-colors"
+        onClick={toggleStructure}
+      >
+        {showStructure ? 'Dölj konstruktion' : 'Visa konstruktion'}
+      </button>
+    </div>
+  )
 }

@@ -9,6 +9,7 @@ import {
   isValidCornerForStair,
   getPlanterCorners,
 } from '@/utils/stairPlanter'
+import { getPostXPositions, POST_W } from '@/utils/structure'
 import type { DeckConfig, DeckShape, Point, Stair, PlanterBox } from '@/types/deck'
 
 // ---------------------------------------------------------------------------
@@ -312,6 +313,7 @@ interface DrawExtras {
   placingPlanter: boolean
   selectedStairId: string | null
   selectedPlanterId: string | null
+  showStructure: boolean
 }
 
 function drawPlan(
@@ -436,6 +438,26 @@ function drawPlan(
     for (const pl of extras.planters) {
       drawPlanter(ctx, pl, shape, scale, origin, pl.id === extras.selectedPlanterId)
     }
+  }
+
+  // --- Post positions (structure mode) ---
+  if (!isDrawingMode && extras.showStructure && shape.length >= 3) {
+    const sxs = shape.map(p => p.x), sys = shape.map(p => p.y)
+    const minX = Math.min(...sxs), maxX = Math.max(...sxs)
+    const maxY = Math.max(...sys)
+    const halfW = (POST_W / 2) * scale
+    ctx.save()
+    ctx.fillStyle = '#5a4010'
+    ctx.strokeStyle = '#3a2800'
+    ctx.lineWidth = 1
+    for (const px of getPostXPositions(minX, maxX)) {
+      const cp = toCanvas({ x: px, y: maxY }, scale, origin)
+      ctx.beginPath()
+      ctx.rect(cp.x - halfW, cp.y - halfW, halfW * 2, halfW * 2)
+      ctx.fill()
+      ctx.stroke()
+    }
+    ctx.restore()
   }
 
   // --- Stairs ---
@@ -640,6 +662,7 @@ export default function PlanView() {
     wallLength, wallDirection, deckWidth, deckDepth, heightAboveGround, boardDirection,
     customShape, drawingPoints, isDrawingMode,
     stairs, planters, placingStair, placingPlanter, selectedStairId, selectedPlanterId,
+    showStructure,
     addDrawingPoint, finishDrawing,
     addStair, addPlanter, selectStair, selectPlanter, clearSelection,
   } = useDeckStore()
@@ -652,6 +675,7 @@ export default function PlanView() {
     hoverTarget: hoverTargetRef.current,
     placingStair, placingPlanter,
     selectedStairId, selectedPlanterId,
+    showStructure,
   }
 
   function redraw(cursor = cursorRef.current, hoverTarget = hoverTargetRef.current) {
@@ -680,6 +704,7 @@ export default function PlanView() {
     wallLength, wallDirection, deckWidth, deckDepth, heightAboveGround, boardDirection,
     customShape, drawingPoints, isDrawingMode,
     stairs, planters, placingStair, placingPlanter, selectedStairId, selectedPlanterId,
+    showStructure,
   ])
 
   function worldFromEvent(e: React.MouseEvent<HTMLCanvasElement>): Point {
