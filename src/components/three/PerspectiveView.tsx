@@ -125,10 +125,6 @@ function addPlanters(
   }
 }
 
-// Renders cumulative layers 1-maxLayer:
-//   1 = footings + posts
-//   2 = + all beams (ledger + intermediate + outer)
-//   3 = + joists
 function addStructureLayers(
   group: THREE.Group,
   shape: DeckShape,
@@ -142,12 +138,11 @@ function addStructureLayers(
   const ys = shape.map(p => p.y)
   const minX = Math.min(...xs), maxX = Math.max(...xs)
   const minY = Math.min(...ys), maxY = Math.max(...ys)
+
   const beamCenterY  = heightAboveGround - JOIST_H - BEAM_H / 2
   const joistCenterY = heightAboveGround - JOIST_H / 2
   const postH        = Math.max(0.01, heightAboveGround - JOIST_H - BEAM_H - FOOTING_H)
 
-  // All beam Y positions: includes ledger (index 0) and outer beam (last index),
-  // with intermediate beams so no joist span exceeds MAX_JOIST_SPAN (2 m).
   const beamYs = getBeamYPositions(minY, maxY, shape)
 
   // --- Layer 1: footings + posts under every non-ledger beam ---
@@ -178,7 +173,6 @@ function addStructureLayers(
     const ext = beamXExtent(shape, by, minY, maxY, minX, maxX)
     const bw = ext.maxX - ext.minX
     const bMidX = (ext.minX + ext.maxX) / 2
-    // Ledger (bi=0): front face flush with wall (y = minY)
     const bz = bi === 0 ? minY + BEAM_W / 2 : by
     const beam = new THREE.Mesh(new THREE.BoxGeometry(bw, BEAM_H, BEAM_W), woodMat)
     beam.position.set(bMidX, beamCenterY, bz)
@@ -187,14 +181,12 @@ function addStructureLayers(
 
   if (maxLayer < 3) return
 
-  // --- Layer 3: joists clipped to shape, capped at MAX_CANTILEVER past last beam ---
+  // --- Layer 3: joists clipped to shape and beam supports at c/c 600 mm ---
   const ε = 0.001
   for (const jx of getJoistXPositions(minX, maxX)) {
     const ext = joistYExtent(shape, jx, minX, maxX)
     if (!ext) continue
 
-    // Find the outermost beam that is (a) within this joist's Y extent and
-    // (b) actually spans this X position — that beam is the last real support.
     let outerBeamY = ext.minY
     for (let bi = beamYs.length - 1; bi >= 0; bi--) {
       const by = beamYs[bi]
@@ -216,6 +208,17 @@ function addStructureLayers(
   }
 }
 
+// Dispose all geometry in a group without removing lights or permanent scene objects
+function clearGroup(group: THREE.Group) {
+  while (group.children.length) {
+    const child = group.children[0]
+    group.remove(child)
+    if (child instanceof THREE.Mesh || child instanceof THREE.LineSegments) {
+      child.geometry.dispose()
+    }
+  }
+}
+
 export default function PerspectiveView() {
   const containerRef = useRef<HTMLDivElement>(null)
 
@@ -225,39 +228,57 @@ export default function PerspectiveView() {
     stairs, planters, viewLayer, setViewLayer,
   } = useDeckStore()
 
+  // Compute initial camera framing synchronously (captured once before any effect)
+  const initRef = useRef<{ sceneSize: number; midZ: number; initHeight: number } | null>(null)
+  if (!initRef.current) {
+    const s = customShape ?? getDeckCorners({ wallLength, wallDirection, deckWidth, deckDepth, heightAboveGround, boardDirection })
+    const ixs = s.map(p => p.x), iys = s.map(p => p.y)
+    const spanX = Math.max(...ixs) - Math.min(...ixs)
+    const spanZ = Math.max(...iys) - Math.min(...iys)
+    initRef.current = {
+      sceneSize: Math.max(wallLength, spanX, spanZ),
+      midZ: spanZ / 2,
+      initHeight: heightAboveGround,
+    }
+  }
+
+  // Refs for persistent Three.js objects (survive content re-renders)
+  const sceneRef    = useRef<THREE.Scene | null>(null)
+  const groupRef    = useRef<THREE.Group | null>(null)
+  const cameraRef   = useRef<THREE.PerspectiveCamera | null>(null)
+  const rendererRef = useRef<THREE.WebGLRenderer | null>(null)
+  const controlsRef = useRef<OrbitControls | null>(null)
+  const animIdRef   = useRef<number>(0)
+
+  // ── Effect 1: setup renderer / camera / controls (runs once on mount) ─────
   useEffect(() => {
     const container = containerRef.current
     if (!container) return
 
     const W = container.clientWidth
     const H = container.clientHeight
+    const { sceneSize, midZ, initHeight } = initRef.current!
 
     const scene = new THREE.Scene()
     scene.background = new THREE.Color(0xeef2ee)
-
-    const shape: DeckShape = customShape ?? getDeckCorners({
-      wallLength, wallDirection, deckWidth, deckDepth,
-      heightAboveGround, boardDirection,
-    })
-    const xs = shape.map(p => p.x), ys = shape.map(p => p.y)
-    const spanX = Math.max(...xs) - Math.min(...xs)
-    const spanZ = Math.max(...ys) - Math.min(...ys)
-    const sceneSize = Math.max(wallLength, spanX, spanZ)
-    const midZ = spanZ / 2
+    sceneRef.current = scene
 
     const camera = new THREE.PerspectiveCamera(45, W / H, 0.1, 200)
     camera.position.set(sceneSize * 1.0, sceneSize * 0.9, sceneSize * 1.5)
-    camera.lookAt(0, heightAboveGround / 2, midZ)
+    camera.lookAt(0, initHeight / 2, midZ)
+    cameraRef.current = camera
 
     const renderer = new THREE.WebGLRenderer({ antialias: true })
     renderer.setPixelRatio(window.devicePixelRatio)
     renderer.setSize(W, H)
     container.appendChild(renderer.domElement)
+    rendererRef.current = renderer
 
     const controls = new OrbitControls(camera, renderer.domElement)
-    controls.target.set(0, heightAboveGround / 2, midZ)
+    controls.target.set(0, initHeight / 2, midZ)
     controls.enableDamping = true
     controls.dampingFactor = 0.08
+    controlsRef.current = controls
 
     scene.add(new THREE.AmbientLight(0xffffff, 0.7))
     const sun = new THREE.DirectionalLight(0xffffff, 0.9)
@@ -265,15 +286,58 @@ export default function PerspectiveView() {
     scene.add(sun)
 
     const group = new THREE.Group()
-    group.rotation.y = DIR_ANGLE[wallDirection]
     scene.add(group)
+    groupRef.current = group
+
+    const animate = () => {
+      animIdRef.current = requestAnimationFrame(animate)
+      controls.update()
+      renderer.render(scene, camera)
+    }
+    animate()
+
+    const ro = new ResizeObserver(() => {
+      const w = container.clientWidth, h = container.clientHeight
+      camera.aspect = w / h
+      camera.updateProjectionMatrix()
+      renderer.setSize(w, h)
+    })
+    ro.observe(container)
+
+    return () => {
+      cancelAnimationFrame(animIdRef.current)
+      ro.disconnect()
+      controls.dispose()
+      renderer.dispose()
+      if (container.contains(renderer.domElement)) container.removeChild(renderer.domElement)
+      sceneRef.current = null
+      cameraRef.current = null
+      rendererRef.current = null
+      controlsRef.current = null
+      groupRef.current = null
+    }
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Effect 2: rebuild geometry when deck state changes ────────────────────
+  useEffect(() => {
+    const group = groupRef.current
+    if (!group) return
+
+    clearGroup(group)
+    group.rotation.y = DIR_ANGLE[wallDirection]
+
+    const shape: DeckShape = customShape ?? getDeckCorners({
+      wallLength, wallDirection, deckWidth, deckDepth,
+      heightAboveGround, boardDirection,
+    })
 
     // Ground
-    group.add(new THREE.Mesh(
+    const groundMesh = new THREE.Mesh(
       new THREE.PlaneGeometry(40, 40),
       new THREE.MeshLambertMaterial({ color: 0xc8d8b0 }),
-    ))
-    group.children[0]!.rotation.x = -Math.PI / 2
+    )
+    groundMesh.rotation.x = -Math.PI / 2
+    group.add(groundMesh)
 
     // House wall
     const wallMesh = new THREE.Mesh(
@@ -284,12 +348,10 @@ export default function PerspectiveView() {
     group.add(wallMesh)
 
     if (viewLayer <= 3) {
-      // Structure layers (no deck surface — so everything is visible)
       addStructureLayers(group, shape, heightAboveGround, viewLayer as 1 | 2 | 3)
       addStairs(group, stairs, shape, heightAboveGround)
       addPlanters(group, planters, shape, heightAboveGround)
     } else {
-      // Layer 4: full deck with boards
       const deckGeo = buildDeckGeometry(shape, heightAboveGround)
       group.add(new THREE.Mesh(deckGeo, new THREE.MeshLambertMaterial({ color: 0xc8a46e })))
 
@@ -305,30 +367,6 @@ export default function PerspectiveView() {
 
       addStairs(group, stairs, shape, heightAboveGround)
       addPlanters(group, planters, shape, heightAboveGround)
-    }
-
-    let animId: number
-    const animate = () => {
-      animId = requestAnimationFrame(animate)
-      controls.update()
-      renderer.render(scene, camera)
-    }
-    animate()
-
-    const ro = new ResizeObserver(() => {
-      const w = container.clientWidth, h = container.clientHeight
-      camera.aspect = w / h
-      camera.updateProjectionMatrix()
-      renderer.setSize(w, h)
-    })
-    ro.observe(container)
-
-    return () => {
-      cancelAnimationFrame(animId)
-      ro.disconnect()
-      controls.dispose()
-      renderer.dispose()
-      if (container.contains(renderer.domElement)) container.removeChild(renderer.domElement)
     }
   }, [
     wallLength, wallDirection, deckWidth, deckDepth, heightAboveGround, boardDirection,
