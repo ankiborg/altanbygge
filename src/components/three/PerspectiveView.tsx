@@ -29,6 +29,27 @@ const LAYERS = [
   { level: 4 as const, label: 'Trall' },
 ]
 
+// Parallelogram slab for corner stairs — works at any corner angle
+function buildCornerStepGeo(
+  anchor: { x: number; y: number },
+  nA: { x: number; y: number },
+  nB: { x: number; y: number },
+  step: number,
+  slabH: number,
+): THREE.BufferGeometry {
+  const d = (step + 1) * STEP_DEPTH
+  // Shape in XY plane (world_x, -world_y) — same convention as buildDeckGeometry
+  const s = new THREE.Shape([
+    new THREE.Vector2(anchor.x,                    -anchor.y),
+    new THREE.Vector2(anchor.x + d*nA.x,           -(anchor.y + d*nA.y)),
+    new THREE.Vector2(anchor.x + d*nA.x + d*nB.x,  -(anchor.y + d*nA.y + d*nB.y)),
+    new THREE.Vector2(anchor.x + d*nB.x,           -(anchor.y + d*nB.y)),
+  ])
+  const geo = new THREE.ExtrudeGeometry(s, { depth: slabH, bevelEnabled: false })
+  geo.rotateX(-Math.PI / 2)
+  return geo
+}
+
 function buildDeckGeometry(shape: DeckShape, height: number): THREE.BufferGeometry {
   const s = new THREE.Shape()
   s.moveTo(shape[0].x, -shape[0].y)
@@ -57,19 +78,11 @@ function addStairs(
       if (!anchor) continue
       const nA = edges[(stair.cornerIndex - 1 + n) % n].outNormal
       const nB = edges[stair.cornerIndex].outNormal
-      const rotY = Math.atan2(-nA.y, nA.x)
 
       for (let s = 0; s < steps; s++) {
-        const size = (s + 1) * STEP_DEPTH
         const slabH = Math.max(0.01, heightAboveGround - (s + 1) * STEP_RISE)
-        const mesh = new THREE.Mesh(new THREE.BoxGeometry(size, slabH, size), mat)
-        mesh.rotation.y = rotY
-        mesh.position.set(
-          anchor.x + (size / 2) * nA.x + (size / 2) * nB.x,
-          slabH / 2,
-          anchor.y + (size / 2) * nA.y + (size / 2) * nB.y,
-        )
-        group.add(mesh)
+        const geo = buildCornerStepGeo(anchor, nA, nB, s, slabH)
+        group.add(new THREE.Mesh(geo, mat))
       }
     } else {
       const edge = edges[stair.edgeIndex]

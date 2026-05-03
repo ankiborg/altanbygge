@@ -22,21 +22,36 @@ const BOARD_DIRECTIONS: { value: BoardDirection; label: string }[] = [
 
 function EdgeLengthInput({ length, onCommit }: { length: number; onCommit: (v: number) => void }) {
   const [val, setVal] = React.useState(length.toFixed(2))
-  React.useEffect(() => { setVal(length.toFixed(2)) }, [length])
+  // Track whether the last length change came from this input so we don't
+  // overwrite the field while the user is still typing.
+  const selfCommitted = React.useRef(false)
 
-  function commit() {
+  React.useEffect(() => {
+    if (!selfCommitted.current) setVal(length.toFixed(2))
+    selfCommitted.current = false
+  }, [length])
+
+  function handleChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const raw = e.target.value
+    setVal(raw)
+    const n = parseFloat(raw)
+    if (!isNaN(n) && n >= 0.1) {
+      selfCommitted.current = true
+      onCommit(n)
+    }
+  }
+
+  function handleBlur() {
     const n = parseFloat(val)
-    if (!isNaN(n) && n >= 0.1) onCommit(n)
-    else setVal(length.toFixed(2))
+    if (isNaN(n) || n < 0.1) setVal(length.toFixed(2))
   }
 
   return (
     <Input
       type="number" min={0.1} step={0.1}
       value={val}
-      onChange={e => setVal(e.target.value)}
-      onBlur={commit}
-      onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
+      onChange={handleChange}
+      onBlur={handleBlur}
     />
   )
 }

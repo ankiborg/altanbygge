@@ -154,15 +154,13 @@ export function getCornerStairLabelPos(
 // Returns true if a corner is valid for a corner stair:
 //   • neither adjacent edge is the wall edge
 //   • corner is convex (outward-facing) — cross(nA,nB) > 0
-//   • corner is approximately right-angle — |dot(nA,nB)| < 0.35  (~±20° of 90°)
 export function isValidCornerForStair(edges: EdgeDim[], cornerIndex: number, n: number): boolean {
   const prev = edges[(cornerIndex - 1 + n) % n]
   const curr = edges[cornerIndex]
   if (isWallEdge(prev) || isWallEdge(curr)) return false
   const nA = prev.outNormal, nB = curr.outNormal
-  const cross = nA.x * nB.y - nA.y * nB.x   // > 0 for convex (outward) corner
-  const dot   = nA.x * nB.x + nA.y * nB.y   // ≈ 0 for right-angle
-  return cross > 0.1 && Math.abs(dot) < 0.35
+  const cross = nA.x * nB.y - nA.y * nB.x
+  return cross > 0.1  // outward-facing convex corner
 }
 
 // ---------------------------------------------------------------------------
