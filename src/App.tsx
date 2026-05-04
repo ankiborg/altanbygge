@@ -1,36 +1,6 @@
-import { useDeckStore } from '@/store/deckStore'
 import ControlPanel from '@/components/ui/ControlPanel'
 import PlanView from '@/components/canvas/PlanView'
 import PerspectiveView from '@/components/three/PerspectiveView'
-
-const LAYERS = [
-  { level: 1 as const, label: 'Plintar' },
-  { level: 2 as const, label: 'Balkar' },
-  { level: 3 as const, label: 'Reglar' },
-  { level: 4 as const, label: 'Trall' },
-]
-
-function LayerBar() {
-  const { viewLayer, setViewLayer } = useDeckStore()
-  return (
-    <div className="h-10 shrink-0 bg-white border-b border-slate-200 flex items-center px-3 gap-1">
-      <span className="text-[10px] font-semibold uppercase tracking-widest text-slate-400 pr-2">Visa</span>
-      {LAYERS.map(({ level, label }) => (
-        <button
-          key={level}
-          onClick={() => setViewLayer(level)}
-          className={`px-3 h-6 rounded text-xs font-medium transition-colors ${
-            viewLayer === level
-              ? 'bg-slate-800 text-white'
-              : 'text-slate-500 hover:bg-slate-100'
-          }`}
-        >
-          {label}
-        </button>
-      ))}
-    </div>
-  )
-}
 
 export default function App() {
   return (
@@ -46,7 +16,6 @@ export default function App() {
       </aside>
 
       <div className="flex-1 flex flex-col min-w-0">
-        <LayerBar />
         <div className="flex-[3] min-h-0 border-b border-slate-200">
           <PlanView />
         </div>

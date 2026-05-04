@@ -3,7 +3,7 @@ import { useDeckStore } from '@/store/deckStore'
 import { getEdgeDims } from '@/utils/polygon'
 import { isWallEdge, numSteps } from '@/utils/stairPlanter'
 import { getDeckCorners } from '@/utils/geometry'
-import type { WallDirection, BoardDirection } from '@/types/deck'
+import type { BoardDirection } from '@/types/deck'
 
 // ---------------------------------------------------------------------------
 // Small reusable pieces
@@ -87,35 +87,6 @@ function Segment<T extends string>({
               ? 'bg-slate-800 text-white'
               : 'bg-white text-slate-500 hover:bg-slate-50'
           } ${i > 0 ? 'border-l border-slate-200' : ''}`}
-        >
-          {label}
-        </button>
-      ))}
-    </div>
-  )
-}
-
-// Compass: 4 cardinal direction buttons in a cross layout
-const COMPASS: { value: WallDirection; label: string; col: number; row: number }[] = [
-  { value: 'north', label: 'N', col: 2, row: 1 },
-  { value: 'west',  label: 'V', col: 1, row: 2 },
-  { value: 'east',  label: 'Ö', col: 3, row: 2 },
-  { value: 'south', label: 'S', col: 2, row: 3 },
-]
-
-function Compass({ value, onChange }: { value: WallDirection; onChange: (v: WallDirection) => void }) {
-  return (
-    <div className="grid gap-1" style={{ gridTemplateColumns: 'repeat(3, 28px)', gridTemplateRows: 'repeat(3, 28px)' }}>
-      {COMPASS.map(({ value: v, label, col, row }) => (
-        <button
-          key={v}
-          style={{ gridColumn: col, gridRow: row }}
-          onClick={() => onChange(v)}
-          className={`rounded text-xs font-semibold transition-colors leading-none ${
-            value === v
-              ? 'bg-slate-800 text-white'
-              : 'border border-slate-200 bg-white text-slate-500 hover:bg-slate-50'
-          }`}
         >
           {label}
         </button>
@@ -227,10 +198,6 @@ export default function ControlPanel() {
             onChange={(v) => store.setHeightAboveGround(v / 100)}
           />
         </Row>
-        <div className="flex items-start gap-3">
-          <span className="text-xs text-slate-500 w-20 shrink-0 pt-1.5">Husvägg mot</span>
-          <Compass value={store.wallDirection} onChange={store.setWallDirection} />
-        </div>
       </Section>
 
       {/* ── FORM ────────────────────────────────────────── */}
