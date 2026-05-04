@@ -28,29 +28,41 @@ export function getPostXPositions(minX: number, maxX: number): number[] {
 
 // All beam Y positions (parallel to wall), spaced so no joist span exceeds MAX_JOIST_SPAN.
 // Index 0 = ledger (at wall), last = outer beam.
-// When shape is provided, also inserts a beam at every horizontal edge (L/U-shape steps)
-// so the corner of the narrower section is always supported.
+// When shape is provided, inserts mandatory beams at horizontal step edges (L/U-shapes).
+// Uses an anchor-fill approach: step edges are anchors; gaps between anchors are filled
+// with evenly-spaced intermediates. This prevents two beams landing close together when
+// a step edge nearly coincides with an evenly-spaced position.
 export function getBeamYPositions(minY: number, maxY: number, shape?: Point[]): number[] {
-  const n = Math.max(1, Math.ceil((maxY - minY) / MAX_JOIST_SPAN))
-  const evenly = Array.from({ length: n + 1 }, (_, i) => minY + (i / n) * (maxY - minY))
-
-  if (!shape) return evenly
-
   const ε = 0.001
+
   const stepYs: number[] = []
-  const len = shape.length
-  for (let i = 0; i < len; i++) {
-    const a = shape[i], b = shape[(i + 1) % len]
-    if (Math.abs(a.y - b.y) < ε) {
-      const y = (a.y + b.y) / 2
-      if (y > minY + ε && y < maxY - ε) stepYs.push(y)
+  if (shape) {
+    const len = shape.length
+    for (let i = 0; i < len; i++) {
+      const a = shape[i], b = shape[(i + 1) % len]
+      if (Math.abs(a.y - b.y) < ε) {
+        const y = (a.y + b.y) / 2
+        if (y > minY + ε && y < maxY - ε) stepYs.push(y)
+      }
     }
   }
 
-  if (stepYs.length === 0) return evenly
+  // Sorted, deduplicated anchors: ledger + step edges + outer beam
+  const anchors = [minY, ...stepYs, maxY]
+    .sort((a, b) => a - b)
+    .filter((y, i, arr) => i === 0 || Math.abs(y - arr[i - 1]) > ε)
 
-  const all = [...evenly, ...stepYs].sort((a, b) => a - b)
-  return all.filter((y, i) => i === 0 || Math.abs(y - all[i - 1]) > ε)
+  // Fill each gap with evenly-spaced intermediates (never near an anchor boundary)
+  const result: number[] = [anchors[0]]
+  for (let i = 1; i < anchors.length; i++) {
+    const a = anchors[i - 1], b = anchors[i]
+    const n = Math.ceil((b - a) / MAX_JOIST_SPAN)
+    for (let j = 1; j <= n; j++) {
+      result.push(a + (j / n) * (b - a))
+    }
+  }
+
+  return result
 }
 
 // X extent of the deck polygon at a given Y scanline (for clipping beams to shape).
