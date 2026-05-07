@@ -1,8 +1,11 @@
 import ControlPanel from '@/components/ui/ControlPanel'
 import PlanView from '@/components/canvas/PlanView'
 import PerspectiveView from '@/components/three/PerspectiveView'
+import { useDeckStore } from '@/store/deckStore'
 
 export default function App() {
+  const viewLayer = useDeckStore(s => s.viewLayer)
+
   return (
     <div className="flex h-screen overflow-hidden bg-slate-100">
       <aside className="w-64 shrink-0 flex flex-col bg-white border-r border-slate-200 z-10 shadow-sm">
@@ -16,10 +19,12 @@ export default function App() {
       </aside>
 
       <div className="flex-1 flex flex-col min-w-0">
-        <div className="flex-[3] min-h-0 border-b border-slate-200">
-          <PlanView />
-        </div>
-        <div className="flex-[2] min-h-0">
+        {viewLayer !== 5 && (
+          <div className="flex-[3] min-h-0 border-b border-slate-200">
+            <PlanView />
+          </div>
+        )}
+        <div className={viewLayer === 5 ? 'flex-1 min-h-0' : 'flex-[2] min-h-0'}>
           <PerspectiveView />
         </div>
       </div>

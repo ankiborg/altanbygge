@@ -14,7 +14,7 @@ export function isWallEdge(edge: EdgeDim): boolean {
 }
 
 // Unit tangent along the edge (from → to)
-function edgeTangent(edge: EdgeDim): Point {
+export function edgeTangent(edge: EdgeDim): Point {
   const dx = edge.to.x - edge.from.x
   const dy = edge.to.y - edge.from.y
   const len = Math.sqrt(dx * dx + dy * dy)

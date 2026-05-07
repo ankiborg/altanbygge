@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { DeckConfig, DeckShape, Point, WallDirection, BoardDirection, Stair, PlanterBox } from '@/types/deck'
+import type { DeckConfig, DeckShape, Point, WallDirection, BoardDirection, Stair, PlanterBox, Pergola } from '@/types/deck'
 import { resizeEdge } from '@/utils/polygon'
 
 interface DeckStore extends DeckConfig {
@@ -19,17 +19,22 @@ interface DeckStore extends DeckConfig {
   undoDrawingPoint: () => void
   finishDrawing: () => void
   clearCustomShape: () => void
+  setCustomShape: (shape: DeckShape) => void
   updateCustomShapeEdge: (edgeIndex: number, newLength: number) => void
 
   stairs: Stair[]
   planters: PlanterBox[]
+  pergolas: Pergola[]
   placingStair: boolean
   placingPlanter: boolean
+  placingPergola: boolean
   selectedStairId: string | null
   selectedPlanterId: string | null
+  selectedPergolaId: string | null
 
   startPlacingStair: () => void
   startPlacingPlanter: () => void
+  startPlacingPergola: () => void
   cancelPlacing: () => void
 
   addStair: (stair: Stair) => void
@@ -40,12 +45,20 @@ interface DeckStore extends DeckConfig {
   updatePlanter: (id: string, updates: Partial<Omit<PlanterBox, 'id'>>) => void
   deletePlanter: (id: string) => void
 
+  addPergola: (pergola: Pergola) => void
+  updatePergola: (id: string, updates: Partial<Omit<Pergola, 'id'>>) => void
+  deletePergola: (id: string) => void
+
   selectStair: (id: string) => void
   selectPlanter: (id: string) => void
+  selectPergola: (id: string) => void
   clearSelection: () => void
 
-  viewLayer: 1 | 2 | 3 | 4
-  setViewLayer: (layer: 1 | 2 | 3 | 4) => void
+  viewLayer: 1 | 2 | 3 | 4 | 5
+  setViewLayer: (layer: 1 | 2 | 3 | 4 | 5) => void
+
+  selectedPieceId: string | null
+  setSelectedPiece: (id: string | null) => void
 }
 
 export const useDeckStore = create<DeckStore>()((set, get) => ({
@@ -77,6 +90,7 @@ export const useDeckStore = create<DeckStore>()((set, get) => ({
   },
   clearCustomShape: () =>
     set({ customShape: null, drawingPoints: [], isDrawingMode: false }),
+  setCustomShape: (shape) => set({ customShape: shape }),
   updateCustomShapeEdge: (edgeIndex, newLength) => {
     const { customShape } = get()
     if (!customShape) return
@@ -85,14 +99,18 @@ export const useDeckStore = create<DeckStore>()((set, get) => ({
 
   stairs: [],
   planters: [],
+  pergolas: [],
   placingStair: false,
   placingPlanter: false,
+  placingPergola: false,
   selectedStairId: null,
   selectedPlanterId: null,
+  selectedPergolaId: null,
 
-  startPlacingStair: () => set({ placingStair: true, placingPlanter: false, selectedStairId: null, selectedPlanterId: null }),
-  startPlacingPlanter: () => set({ placingPlanter: true, placingStair: false, selectedStairId: null, selectedPlanterId: null }),
-  cancelPlacing: () => set({ placingStair: false, placingPlanter: false }),
+  startPlacingStair:   () => set({ placingStair: true,   placingPlanter: false, placingPergola: false, selectedStairId: null, selectedPlanterId: null, selectedPergolaId: null }),
+  startPlacingPlanter: () => set({ placingPlanter: true, placingStair: false,   placingPergola: false, selectedStairId: null, selectedPlanterId: null, selectedPergolaId: null }),
+  startPlacingPergola: () => set({ placingPergola: true, placingStair: false,   placingPlanter: false, selectedStairId: null, selectedPlanterId: null, selectedPergolaId: null }),
+  cancelPlacing: () => set({ placingStair: false, placingPlanter: false, placingPergola: false }),
 
   addStair: (stair) => set((s) => ({ stairs: [...s.stairs, stair], placingStair: false })),
   updateStair: (id, updates) =>
@@ -106,10 +124,20 @@ export const useDeckStore = create<DeckStore>()((set, get) => ({
   deletePlanter: (id) =>
     set((s) => ({ planters: s.planters.filter((pl) => pl.id !== id), selectedPlanterId: null })),
 
-  selectStair: (id) => set({ selectedStairId: id, selectedPlanterId: null }),
-  selectPlanter: (id) => set({ selectedPlanterId: id, selectedStairId: null }),
-  clearSelection: () => set({ selectedStairId: null, selectedPlanterId: null }),
+  addPergola: (pergola) => set((s) => ({ pergolas: [...s.pergolas, pergola], placingPergola: false })),
+  updatePergola: (id, updates) =>
+    set((s) => ({ pergolas: s.pergolas.map((pg) => pg.id === id ? { ...pg, ...updates } : pg) })),
+  deletePergola: (id) =>
+    set((s) => ({ pergolas: s.pergolas.filter((pg) => pg.id !== id), selectedPergolaId: null })),
+
+  selectStair:   (id) => set({ selectedStairId: id,   selectedPlanterId: null, selectedPergolaId: null }),
+  selectPlanter: (id) => set({ selectedPlanterId: id, selectedStairId: null,   selectedPergolaId: null }),
+  selectPergola: (id) => set({ selectedPergolaId: id, selectedStairId: null,   selectedPlanterId: null }),
+  clearSelection: () => set({ selectedStairId: null, selectedPlanterId: null, selectedPergolaId: null }),
 
   viewLayer: 4,
   setViewLayer: (layer) => set({ viewLayer: layer }),
+
+  selectedPieceId: null,
+  setSelectedPiece: (id) => set({ selectedPieceId: id }),
 }))

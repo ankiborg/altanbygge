@@ -1,5 +1,10 @@
 import type { Point } from '@/types/deck'
 
+export const BOARD_W        = 0.120   // 120 mm face width
+export const BOARD_T        = 0.028   // 28 mm thickness
+export const BOARD_GAP      = 0.002   // 2 mm gap between boards
+export const BOARD_OVERHANG = 0.015   // 15 mm overhang past deck edge
+export const BOARD_CC       = BOARD_W + BOARD_GAP  // 122 mm c/c
 export const JOIST_W        = 0.045
 export const JOIST_H        = 0.070
 export const BEAM_W         = 0.045
@@ -11,6 +16,15 @@ export const JOIST_CC       = 0.600   // c/c 600 mm
 export const POST_CC        = 1.800   // max c/c 1800 mm between posts
 export const MAX_JOIST_SPAN = 2.000   // max 2 m between beam supports
 export const MAX_CANTILEVER = MAX_JOIST_SPAN / 4  // max 500 mm overhang past last beam
+
+export const PERGOLA_POST_W      = 0.090  // 90×90 mm post
+export const PERGOLA_BEAM_W      = 0.045  // 45 mm beam width (thin dimension)
+export const PERGOLA_BEAM_H      = 0.145  // 145 mm beam height
+export const PERGOLA_RAFTER_W    = 0.045  // 45 mm rafter width
+export const PERGOLA_RAFTER_H    = 0.095  // 95 mm rafter height
+export const PERGOLA_RAFTER_OV   = 0.200  // 200 mm rafter overhang past beam
+export const PERGOLA_POST_BASE_W = 0.100  // post shoe footprint
+export const PERGOLA_POST_BASE_H = 0.050  // post shoe height
 
 // Evenly distributed positions (≤ cc spacing) from x0 to x1, always includes both ends
 export function spanPositions(x0: number, x1: number, cc: number): number[] {

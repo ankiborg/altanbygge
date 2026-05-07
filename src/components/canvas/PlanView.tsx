@@ -3,14 +3,14 @@ import { useDeckStore } from '@/store/deckStore'
 import { getDeckCorners, toCanvas } from '@/utils/geometry'
 import { getBoardLinesForShape, getEdgeDims, snapToGrid } from '@/utils/polygon'
 import {
-  isWallEdge, numSteps,
+  isWallEdge, numSteps, edgeTangent,
   getStairCorners, getStairTreadLines, getStairLabelPos,
   getCornerStairCorners, getCornerStairTreadLines, getCornerStairLabelPos,
   isValidCornerForStair,
   getPlanterCorners,
 } from '@/utils/stairPlanter'
-import { getPostXPositions, getBeamYPositions, beamXExtent, POST_W } from '@/utils/structure'
-import type { DeckConfig, DeckShape, Point, Stair, PlanterBox } from '@/types/deck'
+import { getPostXPositions, getBeamYPositions, beamXExtent, POST_W, FOOTING_W, PERGOLA_POST_W } from '@/utils/structure'
+import type { DeckConfig, DeckShape, Point, Stair, PlanterBox, Pergola } from '@/types/deck'
 
 // ---------------------------------------------------------------------------
 // Layout constants
@@ -23,6 +23,21 @@ const EDGE_HIT_PX = 20
 const CORNER_HIT_PX = 18
 
 type HoverTarget = { kind: 'edge'; index: number } | { kind: 'corner'; index: number } | null
+
+type HoverEdge =
+  | { kind: 'stair-side';   id: string; sideIndex: 0 | 1 }
+  | { kind: 'planter-side'; id: string; sideIndex: 0 | 1 | 2 }
+  | { kind: 'deck-edge';    index: number }
+  | null
+
+type DragState =
+  | { kind: 'pergola';      id: string; offsetX: number; offsetY: number; moved: boolean }
+  | { kind: 'stair';        id: string; edgeIndex: number; startProj: number; startOffset: number; moved: boolean }
+  | { kind: 'planter';      id: string; edgeIndex: number; startProj: number; startOffset: number; moved: boolean }
+  | { kind: 'edge';         edgeIndex: number; startProj: number; originalShape: DeckShape; moved: boolean }
+  | { kind: 'stair-side';   id: string; edgeIndex: number; sign: 1|-1; startProj: number; startWidth: number; startOffset: number; moved: boolean }
+  | { kind: 'planter-side'; id: string; edgeIndex: number; sign: 1|-1; startProj: number; startWidth: number; startOffset: number; moved: boolean }
+  | { kind: 'planter-outer'; id: string; edgeIndex: number; startDepthProj: number; startBoxDepth: number; moved: boolean }
 
 // ---------------------------------------------------------------------------
 // Drawing helpers
@@ -172,6 +187,12 @@ function distToSegment(px: number, py: number, ax: number, ay: number, bx: numbe
   return Math.sqrt((px - ax - t * dx) ** 2 + (py - ay - t * dy) ** 2)
 }
 
+function distToSegmentWorld(cx: number, cy: number, a: Point, b: Point, scale: number, origin: Point): number {
+  const ca = toCanvas(a, scale, origin)
+  const cb = toCanvas(b, scale, origin)
+  return distToSegment(cx, cy, ca.x, ca.y, cb.x, cb.y)
+}
+
 function pointInQuad(px: number, py: number, corners: [Point, Point, Point, Point], scale: number, origin: Point): boolean {
   const cs = corners.map(c => toCanvas(c, scale, origin))
   // Works for both CW and CCW: all cross products must share the same sign
@@ -298,6 +319,45 @@ function drawPlanter(
   ctx.restore()
 }
 
+function drawPergola(
+  ctx: CanvasRenderingContext2D,
+  pergola: Pergola,
+  idx: number,
+  scale: number,
+  origin: Point,
+  selected: boolean,
+) {
+  const cc = toCanvas({ x: pergola.x, y: pergola.y }, scale, origin)
+  const hw = (pergola.width  / 2) * scale
+  const hd = (pergola.depth  / 2) * scale
+  const hp = (PERGOLA_POST_W / 2) * scale
+
+  ctx.save()
+  ctx.strokeStyle = selected ? '#2563eb' : '#5a7c2e'
+  ctx.lineWidth   = selected ? 2 : 1.5
+  ctx.setLineDash([5, 3])
+  ctx.strokeRect(cc.x - hw, cc.y - hd, hw * 2, hd * 2)
+  ctx.setLineDash([])
+
+  // Post squares at corners
+  const postColor = selected ? '#2563eb' : '#3a5c14'
+  for (const [sx, sy] of [[-hw, -hd], [hw, -hd], [hw, hd], [-hw, hd]] as [number, number][]) {
+    ctx.fillStyle = postColor
+    ctx.fillRect(cc.x + sx - hp, cc.y + sy - hp, hp * 2, hp * 2)
+    ctx.strokeStyle = selected ? '#2563eb' : '#2a4000'
+    ctx.lineWidth = 0.5
+    ctx.strokeRect(cc.x + sx - hp, cc.y + sy - hp, hp * 2, hp * 2)
+  }
+
+  // Label
+  ctx.font = 'bold 11px sans-serif'
+  ctx.textAlign = 'center'
+  ctx.textBaseline = 'middle'
+  ctx.fillStyle = selected ? '#2563eb' : '#2a4000'
+  ctx.fillText(`Pergola ${idx + 1}  ${pergola.width.toFixed(1)}×${pergola.depth.toFixed(1)} m`, cc.x, cc.y)
+  ctx.restore()
+}
+
 // ---------------------------------------------------------------------------
 // Main draw function
 // ---------------------------------------------------------------------------
@@ -307,12 +367,16 @@ interface ViewState { scale: number; origin: Point }
 interface DrawExtras {
   stairs: Stair[]
   planters: PlanterBox[]
+  pergolas: Pergola[]
   heightAboveGround: number
   hoverTarget: HoverTarget
+  hoverEdge: HoverEdge
   placingStair: boolean
   placingPlanter: boolean
+  placingPergola: boolean
   selectedStairId: string | null
   selectedPlanterId: string | null
+  selectedPergolaId: string | null
   viewLayer: number
   showEdgeLabels: boolean
 }
@@ -365,7 +429,7 @@ function drawPlan(
 
     ctx.strokeStyle = '#c8a46e'
     ctx.lineWidth = 1
-    for (const [a, b] of getBoardLinesForShape(shape, cfg.boardDirection)) {
+    for (const { a, b } of getBoardLinesForShape(shape, cfg.boardDirection)) {
       const ca = toCanvas(a, scale, origin)
       const cb = toCanvas(b, scale, origin)
       ctx.beginPath()
@@ -448,8 +512,15 @@ function drawPlan(
     const minY = Math.min(...sys), maxY = Math.max(...sys)
     const halfW = (POST_W / 2) * scale
     const beamYs = getBeamYPositions(minY, maxY, shape)
+    const postCanvasPts = shape.map(p => toCanvas(p, scale, origin))
 
     ctx.save()
+    // Clip to deck polygon so post squares never protrude outside the deck
+    ctx.beginPath()
+    postCanvasPts.forEach((p, i) => i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y))
+    ctx.closePath()
+    ctx.clip()
+
     ctx.fillStyle = '#5a4010'
     ctx.strokeStyle = '#3a2800'
     ctx.lineWidth = 1
@@ -457,8 +528,10 @@ function drawPlan(
     for (let bi = 1; bi < beamYs.length; bi++) {  // skip ledger (bi = 0)
       const by = beamYs[bi]
       const ext = beamXExtent(shape, by, minY, maxY, minX, maxX)
+      // Outer beam posts offset inward so footing outer face aligns with deck edge
+      const postY = bi === beamYs.length - 1 ? by - FOOTING_W / 2 : by
       for (const px of getPostXPositions(ext.minX, ext.maxX)) {
-        const cp = toCanvas({ x: px, y: by }, scale, origin)
+        const cp = toCanvas({ x: px, y: postY }, scale, origin)
         ctx.beginPath()
         ctx.rect(cp.x - halfW, cp.y - halfW, halfW * 2, halfW * 2)
         ctx.fill()
@@ -473,6 +546,33 @@ function drawPlan(
     for (const st of extras.stairs) {
       drawStair(ctx, st, shape, extras.heightAboveGround, scale, origin, st.id === extras.selectedStairId)
     }
+  }
+
+  // --- Pergolas ---
+  if (!isDrawingMode) {
+    for (let pi = 0; pi < extras.pergolas.length; pi++) {
+      drawPergola(ctx, extras.pergolas[pi], pi, scale, origin, extras.pergolas[pi].id === extras.selectedPergolaId)
+    }
+  }
+
+  // --- Pergola placement preview ---
+  if (extras.placingPergola && cursor) {
+    const DEFAULT_W = 3.0, DEFAULT_D = 2.5
+    const cc = toCanvas(cursor, scale, origin)
+    const hw = (DEFAULT_W / 2) * scale
+    const hd = (DEFAULT_D / 2) * scale
+    const hp = (PERGOLA_POST_W / 2) * scale
+    ctx.save()
+    ctx.strokeStyle = 'rgba(90, 124, 46, 0.65)'
+    ctx.lineWidth = 1.5
+    ctx.setLineDash([5, 3])
+    ctx.strokeRect(cc.x - hw, cc.y - hd, hw * 2, hd * 2)
+    ctx.setLineDash([])
+    ctx.fillStyle = 'rgba(90, 124, 46, 0.6)'
+    for (const [sx, sy] of [[-hw, -hd], [hw, -hd], [hw, hd], [-hw, hd]] as [number, number][]) {
+      ctx.fillRect(cc.x + sx - hp, cc.y + sy - hp, hp * 2, hp * 2)
+    }
+    ctx.restore()
   }
 
   // --- House wall ---
@@ -546,6 +646,51 @@ function drawPlan(
         ctx.restore()
       }
     }
+  }
+
+  // --- Hover edge highlight (normal mode: resize handles for stairs, planters, deck edges) ---
+  if (!isDrawingMode && extras.hoverEdge) {
+    const he = extras.hoverEdge
+    ctx.save()
+    ctx.strokeStyle = '#f59e0b'
+    ctx.lineWidth = 4
+    ctx.lineCap = 'round'
+    ctx.setLineDash([])
+
+    if (he.kind === 'deck-edge') {
+      const edges = getEdgeDims(shape)
+      const edge = edges[he.index]
+      if (edge) {
+        const cf = toCanvas(edge.from, scale, origin)
+        const ct = toCanvas(edge.to, scale, origin)
+        ctx.beginPath(); ctx.moveTo(cf.x, cf.y); ctx.lineTo(ct.x, ct.y); ctx.stroke()
+      }
+    } else if (he.kind === 'stair-side') {
+      const st = extras.stairs.find(s => s.id === he.id)
+      if (st && st.kind === 'edge') {
+        const edges = getEdgeDims(shape)
+        const edge = edges[st.edgeIndex]
+        if (edge) {
+          const cs = getStairCorners(edge, st, numSteps(extras.heightAboveGround))
+          const [a, b] = he.sideIndex === 0 ? [cs[0], cs[3]] : [cs[1], cs[2]]
+          const ca = toCanvas(a, scale, origin); const cb = toCanvas(b, scale, origin)
+          ctx.beginPath(); ctx.moveTo(ca.x, ca.y); ctx.lineTo(cb.x, cb.y); ctx.stroke()
+        }
+      }
+    } else if (he.kind === 'planter-side') {
+      const pl = extras.planters.find(p => p.id === he.id)
+      if (pl) {
+        const edges = getEdgeDims(shape)
+        const edge = edges[pl.edgeIndex]
+        if (edge) {
+          const cs = getPlanterCorners(edge, pl)
+          const [a, b] = he.sideIndex === 0 ? [cs[0], cs[3]] : he.sideIndex === 1 ? [cs[1], cs[2]] : [cs[3], cs[2]]
+          const ca = toCanvas(a, scale, origin); const cb = toCanvas(b, scale, origin)
+          ctx.beginPath(); ctx.moveTo(ca.x, ca.y); ctx.lineTo(cb.x, cb.y); ctx.stroke()
+        }
+      }
+    }
+    ctx.restore()
   }
 
   // --- In-progress drawing ---
@@ -666,16 +811,16 @@ function drawPlan(
   }
 
   // Placing-mode instruction
-  if (extras.placingStair || extras.placingPlanter) {
+  if (extras.placingStair || extras.placingPlanter || extras.placingPergola) {
     ctx.save()
     ctx.font = '11px sans-serif'
     ctx.textAlign = 'left'
     ctx.textBaseline = 'top'
     ctx.fillStyle = 'rgba(0,0,0,0.45)'
     ctx.fillText(
-      extras.placingStair
-        ? 'Klicka på en kant eller ett hörn (gul cirkel) för att placera trappan'
-        : 'Klicka på en kant för att placera blomlådan',
+      extras.placingStair   ? 'Klicka på en kant eller ett hörn (gul cirkel) för att placera trappan'
+      : extras.placingPlanter ? 'Klicka på en kant för att placera blomlådan'
+      : 'Klicka i planvyn för att placera pergolan',
       PAD, PAD / 2 - 4,
     )
     ctx.restore()
@@ -691,35 +836,43 @@ export default function PlanView() {
   const viewRef = useRef<ViewState>({ scale: 1, origin: { x: 0, y: 0 } })
   const cursorRef = useRef<Point | null>(null)
   const hoverTargetRef = useRef<HoverTarget>(null)
+  const dragRef = useRef<DragState | null>(null)
+  const hoverEdgeRef = useRef<HoverEdge>(null)
 
   const {
     wallLength, wallDirection, deckWidth, deckDepth, heightAboveGround, boardDirection,
     customShape, drawingPoints, isDrawingMode,
-    stairs, planters, placingStair, placingPlanter, selectedStairId, selectedPlanterId,
+    stairs, planters, pergolas,
+    placingStair, placingPlanter, placingPergola,
+    selectedStairId, selectedPlanterId, selectedPergolaId,
     viewLayer,
     addDrawingPoint, finishDrawing,
-    addStair, addPlanter, selectStair, selectPlanter, clearSelection,
+    addStair, addPlanter, addPergola,
+    updateStair, updatePlanter, updatePergola,
+    setCustomShape,
+    selectStair, selectPlanter, selectPergola, clearSelection,
   } = useDeckStore()
 
   const cfg: DeckConfig = { wallLength, wallDirection, deckWidth, deckDepth, heightAboveGround, boardDirection }
   const shape: DeckShape = customShape ?? getDeckCorners(cfg)
 
   const extras: DrawExtras = {
-    stairs, planters, heightAboveGround,
+    stairs, planters, pergolas, heightAboveGround,
     hoverTarget: hoverTargetRef.current,
-    placingStair, placingPlanter,
-    selectedStairId, selectedPlanterId,
+    hoverEdge: hoverEdgeRef.current,
+    placingStair, placingPlanter, placingPergola,
+    selectedStairId, selectedPlanterId, selectedPergolaId,
     viewLayer,
     showEdgeLabels: !!customShape,
   }
 
-  function redraw(cursor = cursorRef.current, hoverTarget = hoverTargetRef.current) {
+  function redraw(cursor = cursorRef.current, hoverTarget = hoverTargetRef.current, hoverEdge = hoverEdgeRef.current) {
     const canvas = canvasRef.current
     const parent = canvas?.parentElement
     if (!canvas || !parent) return
     if (canvas.width !== parent.clientWidth)  canvas.width  = parent.clientWidth
     if (canvas.height !== parent.clientHeight) canvas.height = parent.clientHeight
-    const ex: DrawExtras = { ...extras, hoverTarget }
+    const ex: DrawExtras = { ...extras, hoverTarget, hoverEdge }
     drawPlan(canvas, cfg, shape, drawingPoints, isDrawingMode, cursor, viewRef, ex)
   }
 
@@ -738,7 +891,8 @@ export default function PlanView() {
   }, [
     wallLength, wallDirection, deckWidth, deckDepth, heightAboveGround, boardDirection,
     customShape, drawingPoints, isDrawingMode,
-    stairs, planters, placingStair, placingPlanter, selectedStairId, selectedPlanterId,
+    stairs, planters, pergolas, placingStair, placingPlanter, placingPergola,
+    selectedStairId, selectedPlanterId, selectedPergolaId,
     viewLayer,
   ])
 
@@ -797,7 +951,202 @@ export default function PlanView() {
     return best
   }
 
+  function handleMouseDown(e: React.MouseEvent<HTMLCanvasElement>) {
+    if (isDrawingMode || placingStair || placingPlanter || placingPergola) return
+    hoverEdgeRef.current = null
+    const rect = canvasRef.current!.getBoundingClientRect()
+    const cx = e.clientX - rect.left
+    const cy = e.clientY - rect.top
+    const { scale, origin } = viewRef.current
+
+    for (const pg of pergolas) {
+      const cpg = toCanvas({ x: pg.x, y: pg.y }, scale, origin)
+      const hw = (pg.width / 2) * scale
+      const hd = (pg.depth / 2) * scale
+      if (cx >= cpg.x - hw && cx <= cpg.x + hw && cy >= cpg.y - hd && cy <= cpg.y + hd) {
+        const world = worldFromEvent(e)
+        dragRef.current = { kind: 'pergola', id: pg.id, offsetX: world.x - pg.x, offsetY: world.y - pg.y, moved: false }
+        e.preventDefault()
+        return
+      }
+    }
+
+    const edges = getEdgeDims(shape)
+
+    for (const st of stairs) {
+      if (st.kind !== 'edge') continue
+      const edge = edges[st.edgeIndex]
+      if (!edge) continue
+      const corners = getStairCorners(edge, st, numSteps(heightAboveGround))
+      const world = worldFromEvent(e)
+      const t = edgeTangent(edge)
+      const proj = world.x * t.x + world.y * t.y
+      // Side edges (resize width) — check before body
+      if (distToSegmentWorld(cx, cy, corners[0], corners[3], scale, origin) < EDGE_HIT_PX) {
+        dragRef.current = { kind: 'stair-side', id: st.id, edgeIndex: st.edgeIndex, sign: -1, startProj: proj, startWidth: st.width, startOffset: st.offset, moved: false }
+        e.preventDefault(); return
+      }
+      if (distToSegmentWorld(cx, cy, corners[1], corners[2], scale, origin) < EDGE_HIT_PX) {
+        dragRef.current = { kind: 'stair-side', id: st.id, edgeIndex: st.edgeIndex, sign: 1, startProj: proj, startWidth: st.width, startOffset: st.offset, moved: false }
+        e.preventDefault(); return
+      }
+      // Body (move offset)
+      if (pointInQuad(cx, cy, corners, scale, origin)) {
+        dragRef.current = { kind: 'stair', id: st.id, edgeIndex: st.edgeIndex, startProj: proj, startOffset: st.offset, moved: false }
+        e.preventDefault(); return
+      }
+    }
+
+    for (const pl of planters) {
+      const edge = edges[pl.edgeIndex]
+      if (!edge) continue
+      const corners = getPlanterCorners(edge, pl)
+      const world = worldFromEvent(e)
+      const t = edgeTangent(edge)
+      const proj = world.x * t.x + world.y * t.y
+      // Side edges (resize width)
+      if (distToSegmentWorld(cx, cy, corners[0], corners[3], scale, origin) < EDGE_HIT_PX) {
+        dragRef.current = { kind: 'planter-side', id: pl.id, edgeIndex: pl.edgeIndex, sign: -1, startProj: proj, startWidth: pl.width, startOffset: pl.offset, moved: false }
+        e.preventDefault(); return
+      }
+      if (distToSegmentWorld(cx, cy, corners[1], corners[2], scale, origin) < EDGE_HIT_PX) {
+        dragRef.current = { kind: 'planter-side', id: pl.id, edgeIndex: pl.edgeIndex, sign: 1, startProj: proj, startWidth: pl.width, startOffset: pl.offset, moved: false }
+        e.preventDefault(); return
+      }
+      // Outer edge (resize boxDepth)
+      if (distToSegmentWorld(cx, cy, corners[3], corners[2], scale, origin) < EDGE_HIT_PX) {
+        const n = edge.outNormal
+        const depthProj = world.x * n.x + world.y * n.y
+        dragRef.current = { kind: 'planter-outer', id: pl.id, edgeIndex: pl.edgeIndex, startDepthProj: depthProj, startBoxDepth: pl.boxDepth, moved: false }
+        e.preventDefault(); return
+      }
+      // Body (move offset)
+      if (pointInQuad(cx, cy, corners, scale, origin)) {
+        dragRef.current = { kind: 'planter', id: pl.id, edgeIndex: pl.edgeIndex, startProj: proj, startOffset: pl.offset, moved: false }
+        e.preventDefault(); return
+      }
+    }
+
+    // Use nearest edge, not first edge — avoids wrong edge being picked at corners
+    let bestEdgeIdx = -1
+    let bestEdgeDist = EDGE_HIT_PX
+    for (let i = 0; i < edges.length; i++) {
+      const edge = edges[i]
+      if (isWallEdge(edge)) continue
+      const cf = toCanvas(edge.from, scale, origin)
+      const ct = toCanvas(edge.to, scale, origin)
+      const d = distToSegment(cx, cy, cf.x, cf.y, ct.x, ct.y)
+      if (d < bestEdgeDist) { bestEdgeDist = d; bestEdgeIdx = i }
+    }
+    if (bestEdgeIdx >= 0) {
+      const currentShape = customShape ?? shape
+      const world = worldFromEvent(e)
+      const n = edges[bestEdgeIdx].outNormal
+      const proj = world.x * n.x + world.y * n.y
+      dragRef.current = { kind: 'edge', edgeIndex: bestEdgeIdx, startProj: proj, originalShape: currentShape, moved: false }
+      if (!customShape) setCustomShape(currentShape)
+      e.preventDefault()
+    }
+  }
+
+  function handleMouseUp() {
+    dragRef.current = null
+  }
+
   function handleMouseMove(e: React.MouseEvent<HTMLCanvasElement>) {
+    if (dragRef.current) {
+      const drag = dragRef.current
+      drag.moved = true
+      const world = worldFromEvent(e)
+
+      if (drag.kind === 'pergola') {
+        const snapped = snapToGrid(world, GRID)
+        const pg = pergolas.find(p => p.id === drag.id)
+        if (pg) {
+          const hw = pg.width / 2
+          const hd = pg.depth / 2
+          const xs = shape.map(p => p.x)
+          const ys = shape.map(p => p.y)
+          const newX = Math.min(Math.max(snapped.x - drag.offsetX, Math.min(...xs) + hw), Math.max(...xs) - hw)
+          const newY = Math.min(Math.max(snapped.y - drag.offsetY, Math.min(...ys) + hd), Math.max(...ys) - hd)
+          updatePergola(drag.id, { x: newX, y: newY })
+        }
+      } else if (drag.kind === 'stair' || drag.kind === 'planter') {
+        const allEdges = getEdgeDims(shape)
+        const edge = allEdges[drag.edgeIndex]
+        if (edge) {
+          const t = edgeTangent(edge)
+          const proj = world.x * t.x + world.y * t.y
+          const rawOffset = drag.startOffset + (proj - drag.startProj)
+          const snapped = Math.round(rawOffset / GRID) * GRID
+          const item = drag.kind === 'stair'
+            ? stairs.find(s => s.id === drag.id)
+            : planters.find(p => p.id === drag.id)
+          if (item) {
+            const hw = item.width / 2
+            const clamped = Math.max(-(edge.length / 2 - hw), Math.min(edge.length / 2 - hw, snapped))
+            if (drag.kind === 'stair') updateStair(drag.id, { offset: clamped })
+            else updatePlanter(drag.id, { offset: clamped })
+          }
+        }
+      } else if (drag.kind === 'edge') {
+        const origEdges = getEdgeDims(drag.originalShape)
+        const origEdge = origEdges[drag.edgeIndex]
+        if (origEdge) {
+          const n = origEdge.outNormal
+          const proj = world.x * n.x + world.y * n.y
+          const rawDelta = proj - drag.startProj
+          const snappedDelta = Math.round(rawDelta / GRID) * GRID
+          const nPts = drag.originalShape.length
+          const i0 = drag.edgeIndex
+          const i1 = (drag.edgeIndex + 1) % nPts
+          const newShape = [...drag.originalShape]
+          newShape[i0] = { x: drag.originalShape[i0].x + snappedDelta * n.x, y: drag.originalShape[i0].y + snappedDelta * n.y }
+          newShape[i1] = { x: drag.originalShape[i1].x + snappedDelta * n.x, y: drag.originalShape[i1].y + snappedDelta * n.y }
+          setCustomShape(newShape)
+        }
+      } else if (drag.kind === 'stair-side' || drag.kind === 'planter-side') {
+        const allEdges = getEdgeDims(shape)
+        const edge = allEdges[drag.edgeIndex]
+        if (edge) {
+          const t = edgeTangent(edge)
+          const proj = world.x * t.x + world.y * t.y
+          const delta = proj - drag.startProj
+          let newWidth: number, newOffset: number
+          if (drag.sign === 1) {
+            // Right side moves, left side stays fixed
+            const fixedPos = drag.startOffset - drag.startWidth / 2
+            const rawMoving = drag.startOffset + drag.startWidth / 2 + delta
+            const snapped = Math.round(rawMoving / GRID) * GRID
+            const clamped = Math.max(fixedPos + GRID, Math.min(edge.length / 2, snapped))
+            newWidth = clamped - fixedPos
+            newOffset = (fixedPos + clamped) / 2
+          } else {
+            // Left side moves, right side stays fixed
+            const fixedPos = drag.startOffset + drag.startWidth / 2
+            const rawMoving = drag.startOffset - drag.startWidth / 2 + delta
+            const snapped = Math.round(rawMoving / GRID) * GRID
+            const clamped = Math.max(-edge.length / 2, Math.min(fixedPos - GRID, snapped))
+            newWidth = fixedPos - clamped
+            newOffset = (clamped + fixedPos) / 2
+          }
+          if (drag.kind === 'stair-side') updateStair(drag.id, { width: newWidth, offset: newOffset })
+          else updatePlanter(drag.id, { width: newWidth, offset: newOffset })
+        }
+      } else if (drag.kind === 'planter-outer') {
+        const allEdges = getEdgeDims(shape)
+        const edge = allEdges[drag.edgeIndex]
+        if (edge) {
+          const n = edge.outNormal
+          const depthProj = world.x * n.x + world.y * n.y
+          const rawDepth = Math.max(GRID, drag.startBoxDepth + (depthProj - drag.startDepthProj))
+          const newBoxDepth = Math.round(rawDepth / GRID) * GRID
+          updatePlanter(drag.id, { boxDepth: newBoxDepth })
+        }
+      }
+      return
+    }
+
     const rect = canvasRef.current!.getBoundingClientRect()
     const cx = e.clientX - rect.left
     const cy = e.clientY - rect.top
@@ -813,20 +1162,76 @@ export default function PlanView() {
       const target = findHoverTarget(cx, cy)
       hoverTargetRef.current = target
       redraw(null, target)
+    } else if (placingPergola) {
+      const pt = snapPoint(worldFromEvent(e))
+      cursorRef.current = pt
+      redraw(pt, null)
+    } else {
+      // Normal mode: detect resize handles for hover highlight
+      const { scale, origin } = viewRef.current
+      const allEdges = getEdgeDims(shape)
+      let newHover: HoverEdge = null
+
+      outer: {
+        for (const st of stairs) {
+          if (st.kind !== 'edge') continue
+          const edge = allEdges[st.edgeIndex]
+          if (!edge) continue
+          const cs = getStairCorners(edge, st, numSteps(heightAboveGround))
+          if (distToSegmentWorld(cx, cy, cs[0], cs[3], scale, origin) < EDGE_HIT_PX) { newHover = { kind: 'stair-side', id: st.id, sideIndex: 0 }; break outer }
+          if (distToSegmentWorld(cx, cy, cs[1], cs[2], scale, origin) < EDGE_HIT_PX) { newHover = { kind: 'stair-side', id: st.id, sideIndex: 1 }; break outer }
+        }
+        for (const pl of planters) {
+          const edge = allEdges[pl.edgeIndex]
+          if (!edge) continue
+          const cs = getPlanterCorners(edge, pl)
+          if (distToSegmentWorld(cx, cy, cs[0], cs[3], scale, origin) < EDGE_HIT_PX) { newHover = { kind: 'planter-side', id: pl.id, sideIndex: 0 }; break outer }
+          if (distToSegmentWorld(cx, cy, cs[1], cs[2], scale, origin) < EDGE_HIT_PX) { newHover = { kind: 'planter-side', id: pl.id, sideIndex: 1 }; break outer }
+          if (distToSegmentWorld(cx, cy, cs[3], cs[2], scale, origin) < EDGE_HIT_PX) { newHover = { kind: 'planter-side', id: pl.id, sideIndex: 2 }; break outer }
+        }
+        let bestIdx = -1, bestDist = EDGE_HIT_PX
+        for (let i = 0; i < allEdges.length; i++) {
+          const edge = allEdges[i]
+          if (isWallEdge(edge)) continue
+          const cf = toCanvas(edge.from, scale, origin)
+          const ct = toCanvas(edge.to, scale, origin)
+          const d = distToSegment(cx, cy, cf.x, cf.y, ct.x, ct.y)
+          if (d < bestDist) { bestDist = d; bestIdx = i }
+        }
+        if (bestIdx >= 0) newHover = { kind: 'deck-edge', index: bestIdx }
+      }
+
+      const prev = hoverEdgeRef.current
+      const changed = newHover?.kind !== prev?.kind ||
+        (newHover?.kind === 'deck-edge' && prev?.kind === 'deck-edge' && newHover.index !== prev.index) ||
+        (newHover?.kind === 'stair-side' && prev?.kind === 'stair-side' && (newHover.id !== prev.id || newHover.sideIndex !== prev.sideIndex)) ||
+        (newHover?.kind === 'planter-side' && prev?.kind === 'planter-side' && (newHover.id !== prev.id || newHover.sideIndex !== prev.sideIndex))
+      if (changed) {
+        hoverEdgeRef.current = newHover
+        redraw()
+      }
     }
   }
 
   function handleMouseLeave() {
-    if (isDrawingMode) {
+    if (isDrawingMode || placingPergola) {
       cursorRef.current = null
       redraw(null, null)
     } else if (placingStair || placingPlanter) {
       hoverTargetRef.current = null
       redraw(null, null)
+    } else if (hoverEdgeRef.current !== null) {
+      hoverEdgeRef.current = null
+      redraw()
     }
   }
 
   function handleClick(e: React.MouseEvent<HTMLCanvasElement>) {
+    if (dragRef.current?.moved) {
+      dragRef.current = null
+      return
+    }
+
     // Drawing mode
     if (isDrawingMode) {
       const pt = snapPoint(worldFromEvent(e))
@@ -904,6 +1309,23 @@ export default function PlanView() {
       return
     }
 
+    // Placing pergola
+    if (placingPergola) {
+      const pt = snapPoint(worldFromEvent(e))
+      addPergola({
+        id:           crypto.randomUUID(),
+        x:            pt.x,
+        y:            Math.max(1.25, pt.y),  // ensure pergola center inside deck
+        width:        3.0,
+        depth:        2.5,
+        height:       2.2,
+        wallAttached: false,
+        rafterCC:     0.6,
+      })
+      cursorRef.current = null
+      return
+    }
+
     // Selection
     const rect = canvasRef.current!.getBoundingClientRect()
     const cx = e.clientX - rect.left
@@ -938,18 +1360,30 @@ export default function PlanView() {
       }
     }
 
+    for (const pg of pergolas) {
+      const cpg = toCanvas({ x: pg.x, y: pg.y }, scale, origin)
+      const hw = (pg.width / 2) * scale
+      const hd = (pg.depth / 2) * scale
+      if (cx >= cpg.x - hw && cx <= cpg.x + hw && cy >= cpg.y - hd && cy <= cpg.y + hd) {
+        selectPergola(pg.id)
+        return
+      }
+    }
+
     clearSelection()
   }
 
-  const activeCursor = isDrawingMode || placingStair || placingPlanter ? 'cursor-crosshair' : ''
+  const activeCursor = isDrawingMode || placingStair || placingPlanter || placingPergola ? 'cursor-crosshair' : ''
 
   return (
     <div className={`w-full h-full bg-white ${activeCursor}`}>
       <canvas
         ref={canvasRef}
         style={{ display: 'block' }}
+        onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
         onMouseLeave={handleMouseLeave}
+        onMouseUp={handleMouseUp}
         onClick={handleClick}
       />
     </div>

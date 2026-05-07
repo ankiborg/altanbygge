@@ -34,3 +34,14 @@ export interface PlanterBox {
   boxDepth: number // bredd: metres out from the deck edge
   // height is always derived from heightAboveGround
 }
+
+export interface Pergola {
+  id:           string
+  x:            number   // centre X on deck (m from wall centre)
+  y:            number   // centre Y (m from wall)
+  width:        number   // X dimension (parallel to wall)
+  depth:        number   // Y dimension (out from wall)
+  height:       number   // m above deck surface
+  wallAttached: boolean  // v2: attach to house wall instead of rear posts
+  rafterCC:     number   // rafter spacing c/c (m), default 0.600
+}

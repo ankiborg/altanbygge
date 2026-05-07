@@ -159,6 +159,8 @@ function NudgeRow({
 // Main panel
 // ---------------------------------------------------------------------------
 
+const PERGOLA_DEFAULTS = { width: 3.0, depth: 2.5, height: 2.2, rafterCC: 0.6 }
+
 export default function ControlPanel() {
   const store = useDeckStore()
   const shape = store.customShape ?? getDeckCorners({
@@ -296,12 +298,12 @@ export default function ControlPanel() {
       <Section title="Tillbehör" badge={`${steps} steg · ${heightCm} cm`}>
 
         {/* Placing-mode banner */}
-        {(store.placingStair || store.placingPlanter) ? (
+        {(store.placingStair || store.placingPlanter || store.placingPergola) ? (
           <div className="space-y-2">
             <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-2.5 py-2 leading-relaxed">
-              {store.placingStair
-                ? 'Klicka på en kant eller ett hörn i planvyn'
-                : 'Klicka på en kant i planvyn'}
+              {store.placingStair   ? 'Klicka på en kant eller ett hörn i planvyn'
+              : store.placingPlanter ? 'Klicka på en kant i planvyn'
+              : 'Klicka var som helst i planvyn'}
             </p>
             <button
               onClick={store.cancelPlacing}
@@ -325,6 +327,13 @@ export default function ControlPanel() {
               className="h-8 rounded border border-slate-200 bg-white text-xs text-slate-700 hover:bg-slate-50 disabled:opacity-40 transition-colors"
             >
               + Blomlåda
+            </button>
+            <button
+              disabled={store.isDrawingMode}
+              onClick={store.startPlacingPergola}
+              className="col-span-2 h-8 rounded border border-slate-200 bg-white text-xs text-slate-700 hover:bg-slate-50 disabled:opacity-40 transition-colors"
+            >
+              + Pergola
             </button>
           </div>
         )}
@@ -436,6 +445,53 @@ export default function ControlPanel() {
             </div>
           )
         })}
+        {/* Pergolas */}
+        {store.pergolas.map((pg, idx) => {
+          const isSelected = pg.id === store.selectedPergolaId
+          return (
+            <div key={pg.id}>
+              <button
+                onClick={() => isSelected ? store.clearSelection() : store.selectPergola(pg.id)}
+                className={`w-full flex items-center justify-between px-2.5 py-2 rounded border text-xs transition-colors ${
+                  isSelected
+                    ? 'border-blue-400 bg-blue-50 text-blue-700'
+                    : 'border-slate-200 bg-white hover:bg-slate-50 text-slate-700'
+                }`}
+              >
+                <span className="font-medium">Pergola {idx + 1}</span>
+                <span className="text-slate-400">{pg.width.toFixed(1)}×{pg.depth.toFixed(1)} m</span>
+              </button>
+
+              {isSelected && (
+                <div className="mt-2 space-y-2 pl-2 border-l-2 border-blue-200 ml-0.5">
+                  <Row label="Bredd" unit="m">
+                    <Num value={pg.width}  min={1.0} max={10} step={0.1} onChange={(v) => store.updatePergola(pg.id, { width: v })} />
+                  </Row>
+                  <Row label="Djup" unit="m">
+                    <Num value={pg.depth}  min={1.0} max={8}  step={0.1} onChange={(v) => store.updatePergola(pg.id, { depth: v })} />
+                  </Row>
+                  <Row label="Höjd" unit="m">
+                    <Num value={pg.height} min={1.8} max={5}  step={0.1} onChange={(v) => store.updatePergola(pg.id, { height: v })} />
+                  </Row>
+                  <Row label="Sparr c/c" unit="m">
+                    <Num value={pg.rafterCC} min={0.3} max={1.2} step={0.05} onChange={(v) => store.updatePergola(pg.id, { rafterCC: v })} />
+                  </Row>
+                  <div className="flex items-center gap-2 opacity-40" title="Tillgängligt i kommande version">
+                    <span className="text-xs text-slate-500 w-20 shrink-0">Mot husvägg</span>
+                    <span className="text-xs text-slate-400 italic">Kommer i v2</span>
+                  </div>
+                  <button
+                    onClick={() => store.deletePergola(pg.id)}
+                    className="w-full h-7 rounded border border-red-200 text-xs text-red-500 hover:bg-red-50 transition-colors"
+                  >
+                    Ta bort
+                  </button>
+                </div>
+              )}
+            </div>
+          )
+        })}
+
       </Section>
     </div>
   )

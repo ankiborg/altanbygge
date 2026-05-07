@@ -1,4 +1,5 @@
 import type { Point, DeckShape, BoardDirection } from '@/types/deck'
+import { BOARD_W, BOARD_GAP, BOARD_OVERHANG } from './structure'
 
 // Resize edge i to newLength by translating the downstream (or upstream) non-wall
 // vertices so that orthogonal shapes stay orthogonal.
@@ -54,51 +55,73 @@ export function snapToGrid(p: Point, gridSize: number): Point {
 // Board lines – works for any polygon via scanline intersection
 // ---------------------------------------------------------------------------
 
+export type BoardLine = { a: Point; b: Point; width: number }
+
 export function getBoardLinesForShape(
   shape: DeckShape,
   boardDirection: BoardDirection,
-  spacingM = 0.145,
-): [Point, Point][] {
-  const lines: [Point, Point][] = []
+): BoardLine[] {
+  const CC = BOARD_W + BOARD_GAP
+  const OV = BOARD_OVERHANG
+  const result: BoardLine[] = []
   const n = shape.length
-  if (n < 3) return lines
+  if (n < 3) return result
 
   const xs = shape.map(p => p.x)
   const ys = shape.map(p => p.y)
   const minX = Math.min(...xs), maxX = Math.max(...xs)
   const minY = Math.min(...ys), maxY = Math.max(...ys)
 
-  if (boardDirection === 'parallel') {
-    for (let y = minY + spacingM; y < maxY; y += spacingM) {
-      const hits: number[] = []
-      for (let i = 0; i < n; i++) {
-        const p1 = shape[i], p2 = shape[(i + 1) % n]
-        if ((p1.y <= y && p2.y > y) || (p2.y <= y && p1.y > y)) {
-          hits.push(p1.x + (p2.x - p1.x) * (y - p1.y) / (p2.y - p1.y))
-        }
-      }
-      hits.sort((a, b) => a - b)
-      for (let i = 0; i + 1 < hits.length; i += 2) {
-        lines.push([{ x: hits[i], y }, { x: hits[i + 1], y }])
-      }
+  // Intersect the polygon with a horizontal (dir='y') or vertical (dir='x') line at `pos`.
+  // Returns sorted hit values in the perpendicular axis.
+  function polyHits(dir: 'x' | 'y', pos: number): number[] {
+    const hits: number[] = []
+    for (let i = 0; i < n; i++) {
+      const p1 = shape[i], p2 = shape[(i + 1) % n]
+      const v1 = dir === 'y' ? p1.y : p1.x
+      const v2 = dir === 'y' ? p2.y : p2.x
+      const u1 = dir === 'y' ? p1.x : p1.y
+      const u2 = dir === 'y' ? p2.x : p2.y
+      if ((v1 <= pos && v2 > pos) || (v2 <= pos && v1 > pos))
+        hits.push(u1 + (u2 - u1) * (pos - v1) / (v2 - v1))
     }
-  } else {
-    for (let x = minX + spacingM; x < maxX; x += spacingM) {
-      const hits: number[] = []
-      for (let i = 0; i < n; i++) {
-        const p1 = shape[i], p2 = shape[(i + 1) % n]
-        if ((p1.x <= x && p2.x > x) || (p2.x <= x && p1.x > x)) {
-          hits.push(p1.y + (p2.y - p1.y) * (x - p1.x) / (p2.x - p1.x))
-        }
-      }
-      hits.sort((a, b) => a - b)
+    return hits.sort((a, b) => a - b)
+  }
+
+  // Place boards along `crossAxis` from `edgeMin` to `edgeMax`, each running in `runAxis`.
+  // Boards start OV past edgeMin (or flush at wall for parallel), end OV past edgeMax.
+  // The last board may be narrower than BOARD_W to land exactly OV past edgeMax.
+  const sweep = (crossAxis: 'x' | 'y', edgeMin: number, edgeMax: number) => {
+    const endTarget = edgeMax + OV  // outer edge of last board
+    // Parallel boards (crossAxis='y') start flush at wall (minY), no wall-side overhang
+    const startEdge = crossAxis === 'y' ? edgeMin : edgeMin - OV
+    for (let k = 0; ; k++) {
+      const innerEdge = startEdge + k * CC
+      if (innerEdge >= endTarget) break
+      const bw = Math.min(BOARD_W, endTarget - innerEdge)
+      if (bw < 0.005) break
+      const center = innerEdge + bw / 2
+      const hits = polyHits(crossAxis, center)
       for (let i = 0; i + 1 < hits.length; i += 2) {
-        lines.push([{ x, y: hits[i] }, { x, y: hits[i + 1] }])
+        // Perpendicular boards (crossAxis='x'): don't overhang past wall (minY)
+        const loHit = hits[i]
+        const lo = (crossAxis === 'x' && loHit <= minY + 0.001) ? loHit : loHit - OV
+        const hi = hits[i + 1] + OV
+        if (crossAxis === 'x')
+          result.push({ a: { x: center, y: lo }, b: { x: center, y: hi }, width: bw })
+        else
+          result.push({ a: { x: lo, y: center }, b: { x: hi, y: center }, width: bw })
       }
     }
   }
 
-  return lines
+  if (boardDirection === 'parallel') {
+    sweep('y', minY, maxY)
+  } else {
+    sweep('x', minX, maxX)
+  }
+
+  return result
 }
 
 // ---------------------------------------------------------------------------
