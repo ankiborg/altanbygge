@@ -9,7 +9,7 @@ import {
   STEP_RISE, STEP_DEPTH,
 } from '@/utils/stairPlanter'
 import {
-  BOARD_W, BOARD_T, BOARD_CC,
+  BOARD_W, BOARD_T,
   JOIST_W, JOIST_H, BEAM_W, BEAM_H, POST_W, FOOTING_W, FOOTING_H,
   MAX_CANTILEVER,
   PERGOLA_POST_W, PERGOLA_BEAM_W, PERGOLA_BEAM_H,
@@ -39,67 +39,6 @@ const LAYERS = [
 
 type MeshMap = Map<string, THREE.Mesh>
 
-function mitrAngle(ax: number, ay: number, ox: number, oy: number, bx: number, by: number): number {
-  const d1x = ox - ax, d1y = oy - ay, d2x = bx - ox, d2y = by - oy
-  const d1l = Math.sqrt(d1x * d1x + d1y * d1y), d2l = Math.sqrt(d2x * d2x + d2y * d2y)
-  if (d1l < 0.001 || d2l < 0.001) return 45
-  const dot = (d1x * d2x + d1y * d2y) / (d1l * d2l)
-  const theta = Math.acos(Math.max(-1, Math.min(1, dot))) * 180 / Math.PI
-  return Math.round((180 - theta) / 2 * 10) / 10
-}
-
-// Outer-corner point of two offset lines (one parallel to each edge at depth d)
-function cornerOuterPt(
-  ax: number, ay: number,
-  nAx: number, nAy: number,
-  nBx: number, nBy: number,
-  d: number,
-): { x: number; y: number } {
-  const det = nAy * nBx - nAx * nBy
-  if (Math.abs(det) < 0.001) {
-    return { x: ax + d * nAx + d * nBx, y: ay + d * nAy + d * nBy }
-  }
-  const t = d * (1 - (nAx * nBx + nAy * nBy)) / det
-  return { x: ax + d * nAx + t * nAy, y: ay + d * nAy - t * nAx }
-}
-
-function buildDeckGeometry(shape: DeckShape, height: number): THREE.BufferGeometry {
-  const s = new THREE.Shape()
-  s.moveTo(shape[0].x, -shape[0].y)
-  for (let i = 1; i < shape.length; i++) s.lineTo(shape[i].x, -shape[i].y)
-  s.closePath()
-  const geo = new THREE.ExtrudeGeometry(s, { depth: height, bevelEnabled: false })
-  geo.rotateX(-Math.PI / 2)
-  return geo
-}
-
-// Board geometry with one straight end (x = -len/2) and one miter-cut end (x ≈ +len/2).
-// innerZNeg: z = -BOARD_W/2 is the shorter (inner) side at the miter end.
-function createAngledBoardGeo(len: number, miterDeg: number, innerZNeg: boolean): THREE.BufferGeometry {
-  const h = BOARD_T, w = BOARD_W
-  const shift = (w / 2) * Math.tan(miterDeg * Math.PI / 180)
-  const xInner = len / 2 - shift
-  const xOuter = len / 2 + shift
-  const xAtZNeg = innerZNeg ? xInner : xOuter
-  const xAtZPos = innerZNeg ? xOuter : xInner
-  const pos = new Float32Array([
-    -len/2, 0, -w/2,  -len/2, h, -w/2,  -len/2, h, +w/2,  -len/2, 0, +w/2,
-    xAtZNeg, 0, -w/2,  xAtZNeg, h, -w/2,  xAtZPos, h, +w/2,  xAtZPos, 0, +w/2,
-  ])
-  const idx = new Uint16Array([
-    0,2,1, 0,3,2,
-    4,5,6, 4,6,7,
-    0,1,5, 0,5,4,
-    2,3,7, 2,7,6,
-    0,4,7, 0,7,3,
-    1,2,6, 1,6,5,
-  ])
-  const geo = new THREE.BufferGeometry()
-  geo.setAttribute('position', new THREE.BufferAttribute(pos, 3))
-  geo.setIndex(new THREE.BufferAttribute(idx, 1))
-  geo.computeVertexNormals()
-  return geo
-}
 
 function addFasciaBoards(
   group: THREE.Group,
@@ -439,7 +378,7 @@ export default function PerspectiveView() {
     wallLength, wallDirection, deckWidth, deckDepth,
     heightAboveGround, boardDirection, customShape,
     stairs, planters, pergolas, viewLayer, setViewLayer,
-    selectedPieceId, setSelectedPiece,
+    selectedPieceId,
   } = useDeckStore()
 
   const initRef = useRef<{ sceneSize: number; midZ: number; initHeight: number } | null>(null)

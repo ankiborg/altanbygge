@@ -10,7 +10,7 @@ import {
   getJoistXPositions, getPostXPositions, getBeamYPositions,
   beamXExtent, joistYExtent, spanPositions,
 } from './structure'
-import { numSteps, STEP_RISE, STEP_DEPTH } from './stairPlanter'
+import { numSteps, STEP_DEPTH } from './stairPlanter'
 
 // ---------------------------------------------------------------------------
 // Types

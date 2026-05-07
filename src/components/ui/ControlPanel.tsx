@@ -159,7 +159,6 @@ function NudgeRow({
 // Main panel
 // ---------------------------------------------------------------------------
 
-const PERGOLA_DEFAULTS = { width: 3.0, depth: 2.5, height: 2.2, rafterCC: 0.6 }
 
 export default function ControlPanel() {
   const store = useDeckStore()
