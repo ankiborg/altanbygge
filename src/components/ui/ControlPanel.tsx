@@ -526,6 +526,9 @@ export default function ControlPanel() {
                   <Row label="Höjd" unit="m">
                     <Num value={ur.height} min={1.8} max={3.5} step={0.1} onChange={(v) => store.updateUterum(ur.id, { height: v })} />
                   </Row>
+                  <Row label="Brutna hörn" unit="m">
+                    <Num value={ur.cornerCut} min={0} max={Math.max(0.1, Math.min(2.0, Math.min(ur.width, ur.depth) / 2 - 0.1))} step={0.1} onChange={(v) => store.updateUterum(ur.id, { cornerCut: v })} />
+                  </Row>
                   <button
                     onClick={() => store.deleteUterum(ur.id)}
                     className="w-full h-7 rounded border border-red-200 text-xs text-red-500 hover:bg-red-50 transition-colors"

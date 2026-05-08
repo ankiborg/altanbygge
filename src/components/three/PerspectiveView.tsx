@@ -376,56 +376,89 @@ function addUterums(
   const fw = UTERUM_FRAME_H
   const gt = UTERUM_GLASS_T
 
+  const mesh = (geo: THREE.BufferGeometry, mat: THREE.Material, px: number, py: number, pz: number, ry = 0) => {
+    const m = new THREE.Mesh(geo, mat)
+    m.position.set(px, py, pz)
+    if (ry !== 0) m.rotation.y = ry
+    group.add(m)
+  }
+
   for (const ur of uterums) {
-    const { x, y, width, depth, height } = ur
+    const { x, y, width: w, depth: d, height } = ur
+    const c = Math.min(ur.cornerCut, w / 2 - 0.05, d / 2 - 0.05)
+    const chamfered = c > 0.01
     const postTopY = h + height
 
-    // Corner posts
-    const corners = [
-      { x: x - width / 2, z: y - depth / 2 },
-      { x: x + width / 2, z: y - depth / 2 },
-      { x: x + width / 2, z: y + depth / 2 },
-      { x: x - width / 2, z: y + depth / 2 },
-    ]
-    for (const c of corners) {
-      const post = new THREE.Mesh(new THREE.BoxGeometry(pw, height, pw), frameMat)
-      post.position.set(c.x, h + height / 2, c.z)
-      group.add(post)
+    if (chamfered) {
+      const cl = c * Math.SQRT2
+      const sideD = d - c
+
+      // 6 corner posts
+      for (const [px, pz] of [
+        [x - w / 2,     y - d / 2],
+        [x + w / 2,     y - d / 2],
+        [x + w / 2,     y + d / 2 - c],
+        [x + w / 2 - c, y + d / 2],
+        [x - w / 2 + c, y + d / 2],
+        [x - w / 2,     y + d / 2 - c],
+      ] as [number, number][]) {
+        mesh(new THREE.BoxGeometry(pw, height, pw), frameMat, px, h + height / 2, pz)
+      }
+
+      // Top frame — 6 segments
+      mesh(new THREE.BoxGeometry(w,         fw, fw), frameMat, x,             postTopY + fw / 2, y - d / 2)
+      mesh(new THREE.BoxGeometry(fw,        fw, sideD), frameMat, x - w / 2,  postTopY + fw / 2, y - c / 2)
+      mesh(new THREE.BoxGeometry(fw,        fw, sideD), frameMat, x + w / 2,  postTopY + fw / 2, y - c / 2)
+      mesh(new THREE.BoxGeometry(w - 2 * c, fw, fw), frameMat, x,             postTopY + fw / 2, y + d / 2)
+      mesh(new THREE.BoxGeometry(cl, fw, fw), frameMat, x - w / 2 + c / 2, postTopY + fw / 2, y + d / 2 - c / 2, -Math.PI / 4)
+      mesh(new THREE.BoxGeometry(cl, fw, fw), frameMat, x + w / 2 - c / 2, postTopY + fw / 2, y + d / 2 - c / 2, +Math.PI / 4)
+
+      // Glass walls — 5 sides (not house side)
+      mesh(new THREE.BoxGeometry(gt,         height, sideD), glassMat, x - w / 2,          h + height / 2, y - c / 2)
+      mesh(new THREE.BoxGeometry(gt,         height, sideD), glassMat, x + w / 2,          h + height / 2, y - c / 2)
+      mesh(new THREE.BoxGeometry(w - 2 * c,  height, gt),   glassMat, x,                   h + height / 2, y + d / 2)
+      mesh(new THREE.BoxGeometry(cl, height, gt), glassMat, x - w / 2 + c / 2, h + height / 2, y + d / 2 - c / 2, -Math.PI / 4)
+      mesh(new THREE.BoxGeometry(cl, height, gt), glassMat, x + w / 2 - c / 2, h + height / 2, y + d / 2 - c / 2, +Math.PI / 4)
+
+      // Hexagonal glass roof (shape-Y → world-Z via rotation.x = π/2)
+      const roofShape = new THREE.Shape()
+      roofShape.moveTo(-w / 2,      -d / 2)
+      roofShape.lineTo( w / 2,      -d / 2)
+      roofShape.lineTo( w / 2,       d / 2 - c)
+      roofShape.lineTo( w / 2 - c,   d / 2)
+      roofShape.lineTo(-w / 2 + c,   d / 2)
+      roofShape.lineTo(-w / 2,       d / 2 - c)
+      roofShape.closePath()
+      const roof = new THREE.Mesh(new THREE.ShapeGeometry(roofShape), glassMat)
+      roof.rotation.x = Math.PI / 2
+      roof.position.set(x, postTopY + fw + gt / 2, y)
+      group.add(roof)
+
+    } else {
+      // Rectangular — 4 corner posts
+      for (const [px, pz] of [
+        [x - w / 2, y - d / 2], [x + w / 2, y - d / 2],
+        [x + w / 2, y + d / 2], [x - w / 2, y + d / 2],
+      ] as [number, number][]) {
+        mesh(new THREE.BoxGeometry(pw, height, pw), frameMat, px, h + height / 2, pz)
+      }
+
+      // Top frame — 4 sides
+      mesh(new THREE.BoxGeometry(w,  fw, fw), frameMat, x,         postTopY + fw / 2, y - d / 2)
+      mesh(new THREE.BoxGeometry(w,  fw, fw), frameMat, x,         postTopY + fw / 2, y + d / 2)
+      mesh(new THREE.BoxGeometry(fw, fw, d),  frameMat, x - w / 2, postTopY + fw / 2, y)
+      mesh(new THREE.BoxGeometry(fw, fw, d),  frameMat, x + w / 2, postTopY + fw / 2, y)
+
+      // Glass walls — 3 sides (not house side)
+      const glassW = w - pw * 2
+      const glassD = d - pw * 2
+      mesh(new THREE.BoxGeometry(glassW, height, gt), glassMat, x,         h + height / 2, y + d / 2)
+      mesh(new THREE.BoxGeometry(gt, height, glassD), glassMat, x - w / 2, h + height / 2, y)
+      mesh(new THREE.BoxGeometry(gt, height, glassD), glassMat, x + w / 2, h + height / 2, y)
+
+      // Box glass roof
+      mesh(new THREE.BoxGeometry(w, gt, d), glassMat, x, postTopY + fw + gt / 2, y)
     }
-
-    // Top frame beams on all 4 sides
-    const frameBeams = [
-      { geo: new THREE.BoxGeometry(width, fw, fw), pos: { x, y: postTopY + fw / 2, z: y - depth / 2 } },
-      { geo: new THREE.BoxGeometry(width, fw, fw), pos: { x, y: postTopY + fw / 2, z: y + depth / 2 } },
-      { geo: new THREE.BoxGeometry(fw, fw, depth), pos: { x: x - width / 2, y: postTopY + fw / 2, z: y } },
-      { geo: new THREE.BoxGeometry(fw, fw, depth), pos: { x: x + width / 2, y: postTopY + fw / 2, z: y } },
-    ]
-    for (const { geo, pos } of frameBeams) {
-      const beam = new THREE.Mesh(geo, frameMat)
-      beam.position.set(pos.x, pos.y, pos.z)
-      group.add(beam)
-    }
-
-    // Glass walls on 3 sides (not the house/wall side at z = y - depth/2)
-    const glassW = width - pw * 2
-    const glassD = depth - pw * 2
-    // Outer wall (away from house)
-    const frontGlass = new THREE.Mesh(new THREE.BoxGeometry(glassW, height, gt), glassMat)
-    frontGlass.position.set(x, h + height / 2, y + depth / 2)
-    group.add(frontGlass)
-    // Left side
-    const leftGlass = new THREE.Mesh(new THREE.BoxGeometry(gt, height, glassD), glassMat)
-    leftGlass.position.set(x - width / 2, h + height / 2, y)
-    group.add(leftGlass)
-    // Right side
-    const rightGlass = new THREE.Mesh(new THREE.BoxGeometry(gt, height, glassD), glassMat)
-    rightGlass.position.set(x + width / 2, h + height / 2, y)
-    group.add(rightGlass)
-
-    // Glass roof
-    const roofGlass = new THREE.Mesh(new THREE.BoxGeometry(width, gt, depth), glassMat)
-    roofGlass.position.set(x, postTopY + fw + gt / 2, y)
-    group.add(roofGlass)
   }
 }
 
