@@ -71,7 +71,7 @@ interface DeckStore extends DeckConfig {
 }
 
 export const useDeckStore = create<DeckStore>()((set, get) => ({
-  wallLength: 6,
+  wallLength: 12,
   wallDirection: 'south',
   deckWidth: 6,
   deckDepth: 3,
