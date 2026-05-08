@@ -47,10 +47,11 @@ export interface Pergola {
 }
 
 export interface Uterum {
-  id:     string
-  x:      number   // centre X on deck (m from wall centre)
-  y:      number   // centre Y (m from wall)
-  width:  number   // X dimension (parallel to wall)
-  depth:  number   // Y dimension (out from wall)
-  height: number   // m above deck surface
+  id:         string
+  x:          number   // centre X on deck (m from wall centre)
+  y:          number   // centre Y (m from wall)
+  width:      number   // X dimension (parallel to wall)
+  depth:      number   // Y dimension (out from wall)
+  height:     number   // m above deck surface
+  cornerCut:  number   // chamfer size on the two outer corners (0 = rectangular)
 }

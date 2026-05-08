@@ -367,33 +367,59 @@ function drawUterum(
   origin: Point,
   selected: boolean,
 ) {
-  const cc = toCanvas({ x: ur.x, y: ur.y }, scale, origin)
-  const hw = (ur.width  / 2) * scale
-  const hd = (ur.depth  / 2) * scale
-  const hp = (UTERUM_POST_W / 2) * scale
-
-  ctx.save()
-
-  // Semi-transparent glass fill
-  ctx.fillStyle = selected ? 'rgba(37,99,235,0.07)' : 'rgba(186,225,255,0.22)'
-  ctx.fillRect(cc.x - hw, cc.y - hd, hw * 2, hd * 2)
+  const cc  = toCanvas({ x: ur.x, y: ur.y }, scale, origin)
+  const hw  = (ur.width  / 2) * scale
+  const hd  = (ur.depth  / 2) * scale
+  const hp  = (UTERUM_POST_W / 2) * scale
+  const c   = Math.min(ur.cornerCut, ur.width / 2 - 0.05, ur.depth / 2 - 0.05)
+  const hc  = c * scale  // chamfer in canvas pixels
 
   const lineColor = selected ? '#2563eb' : '#3a6e96'
-  ctx.lineWidth   = selected ? 2 : 1.5
+  ctx.save()
 
-  // 3 glass walls: outer (bottom), left, right — drawn solid
+  // Fill — hexagonal clip when chamfered
+  ctx.beginPath()
+  if (hc > 0.5) {
+    ctx.moveTo(cc.x - hw,      cc.y - hd)
+    ctx.lineTo(cc.x + hw,      cc.y - hd)
+    ctx.lineTo(cc.x + hw,      cc.y + hd - hc)
+    ctx.lineTo(cc.x + hw - hc, cc.y + hd)
+    ctx.lineTo(cc.x - hw + hc, cc.y + hd)
+    ctx.lineTo(cc.x - hw,      cc.y + hd - hc)
+  } else {
+    ctx.rect(cc.x - hw, cc.y - hd, hw * 2, hd * 2)
+  }
+  ctx.closePath()
+  ctx.fillStyle = selected ? 'rgba(37,99,235,0.07)' : 'rgba(186,225,255,0.22)'
+  ctx.fill()
+
+  ctx.lineWidth = selected ? 2 : 1.5
   ctx.strokeStyle = lineColor
   ctx.setLineDash([])
+
+  // Solid glass walls
   ctx.beginPath()
-  ctx.moveTo(cc.x - hw, cc.y + hd)
-  ctx.lineTo(cc.x + hw, cc.y + hd)  // outer wall
-  ctx.moveTo(cc.x - hw, cc.y - hd)
-  ctx.lineTo(cc.x - hw, cc.y + hd)  // left wall
-  ctx.moveTo(cc.x + hw, cc.y - hd)
-  ctx.lineTo(cc.x + hw, cc.y + hd)  // right wall
+  if (hc > 0.5) {
+    // Left wall
+    ctx.moveTo(cc.x - hw, cc.y - hd)
+    ctx.lineTo(cc.x - hw, cc.y + hd - hc)
+    // Left chamfer
+    ctx.lineTo(cc.x - hw + hc, cc.y + hd)
+    // Outer wall
+    ctx.lineTo(cc.x + hw - hc, cc.y + hd)
+    // Right chamfer
+    ctx.lineTo(cc.x + hw, cc.y + hd - hc)
+    // Right wall
+    ctx.lineTo(cc.x + hw, cc.y - hd)
+  } else {
+    ctx.moveTo(cc.x - hw, cc.y - hd)
+    ctx.lineTo(cc.x - hw, cc.y + hd)
+    ctx.lineTo(cc.x + hw, cc.y + hd)
+    ctx.lineTo(cc.x + hw, cc.y - hd)
+  }
   ctx.stroke()
 
-  // House side — dashed to show it's open
+  // House side — dashed
   ctx.setLineDash([4, 3])
   ctx.beginPath()
   ctx.moveTo(cc.x - hw, cc.y - hd)
@@ -401,9 +427,16 @@ function drawUterum(
   ctx.stroke()
   ctx.setLineDash([])
 
-  // Corner post squares
+  // Posts — 4 rectangular or 6 chamfered positions
   const postColor = selected ? '#2563eb' : '#1e5478'
-  for (const [sx, sy] of [[-hw, -hd], [hw, -hd], [hw, hd], [-hw, hd]] as [number, number][]) {
+  const posts: [number, number][] = hc > 0.5
+    ? [
+        [-hw, -hd], [hw, -hd],          // house side
+        [-hw, hd - hc], [-hw + hc, hd], // outer-left, front-left
+        [hw - hc, hd], [hw, hd - hc],   // front-right, outer-right
+      ]
+    : [[-hw, -hd], [hw, -hd], [hw, hd], [-hw, hd]]
+  for (const [sx, sy] of posts) {
     ctx.fillStyle = postColor
     ctx.fillRect(cc.x + sx - hp, cc.y + sy - hp, hp * 2, hp * 2)
     ctx.strokeStyle = lineColor
@@ -1454,12 +1487,13 @@ export default function PlanView() {
     if (placingUterum) {
       const pt = snapPoint(worldFromEvent(e))
       addUterum({
-        id:     crypto.randomUUID(),
-        x:      pt.x,
-        y:      Math.max(1.5, pt.y),
-        width:  3.0,
-        depth:  3.0,
-        height: 2.2,
+        id:        crypto.randomUUID(),
+        x:         pt.x,
+        y:         Math.max(1.5, pt.y),
+        width:     3.0,
+        depth:     3.0,
+        height:    2.2,
+        cornerCut: 0,
       })
       cursorRef.current = null
       return
