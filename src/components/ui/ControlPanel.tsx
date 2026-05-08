@@ -330,9 +330,16 @@ export default function ControlPanel() {
             <button
               disabled={store.isDrawingMode}
               onClick={store.startPlacingPergola}
-              className="col-span-2 h-8 rounded border border-slate-200 bg-white text-xs text-slate-700 hover:bg-slate-50 disabled:opacity-40 transition-colors"
+              className="h-8 rounded border border-slate-200 bg-white text-xs text-slate-700 hover:bg-slate-50 disabled:opacity-40 transition-colors"
             >
               + Pergola
+            </button>
+            <button
+              disabled={store.isDrawingMode}
+              onClick={store.startPlacingUterum}
+              className="h-8 rounded border border-slate-200 bg-white text-xs text-slate-700 hover:bg-slate-50 disabled:opacity-40 transition-colors"
+            >
+              + Uterum
             </button>
           </div>
         )}
@@ -481,6 +488,46 @@ export default function ControlPanel() {
                   </div>
                   <button
                     onClick={() => store.deletePergola(pg.id)}
+                    className="w-full h-7 rounded border border-red-200 text-xs text-red-500 hover:bg-red-50 transition-colors"
+                  >
+                    Ta bort
+                  </button>
+                </div>
+              )}
+            </div>
+          )
+        })}
+
+        {/* Uterums */}
+        {store.uterums.map((ur, idx) => {
+          const isSelected = ur.id === store.selectedUterumId
+          return (
+            <div key={ur.id}>
+              <button
+                onClick={() => isSelected ? store.clearSelection() : store.selectUterum(ur.id)}
+                className={`w-full flex items-center justify-between px-2.5 py-2 rounded border text-xs transition-colors ${
+                  isSelected
+                    ? 'border-blue-400 bg-blue-50 text-blue-700'
+                    : 'border-slate-200 bg-white hover:bg-slate-50 text-slate-700'
+                }`}
+              >
+                <span className="font-medium">Uterum {idx + 1}</span>
+                <span className="text-slate-400">{ur.width.toFixed(1)}×{ur.depth.toFixed(1)} m</span>
+              </button>
+
+              {isSelected && (
+                <div className="mt-2 space-y-2 pl-2 border-l-2 border-blue-200 ml-0.5">
+                  <Row label="Bredd" unit="m">
+                    <Num value={ur.width}  min={1.5} max={10} step={0.1} onChange={(v) => store.updateUterum(ur.id, { width: v })} />
+                  </Row>
+                  <Row label="Djup" unit="m">
+                    <Num value={ur.depth}  min={1.5} max={8}  step={0.1} onChange={(v) => store.updateUterum(ur.id, { depth: v })} />
+                  </Row>
+                  <Row label="Höjd" unit="m">
+                    <Num value={ur.height} min={1.8} max={3.5} step={0.1} onChange={(v) => store.updateUterum(ur.id, { height: v })} />
+                  </Row>
+                  <button
+                    onClick={() => store.deleteUterum(ur.id)}
                     className="w-full h-7 rounded border border-red-200 text-xs text-red-500 hover:bg-red-50 transition-colors"
                   >
                     Ta bort

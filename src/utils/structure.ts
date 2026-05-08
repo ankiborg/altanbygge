@@ -17,6 +17,10 @@ export const POST_CC        = 1.800   // max c/c 1800 mm between posts
 export const MAX_JOIST_SPAN = 2.000   // max 2 m between beam supports
 export const MAX_CANTILEVER = MAX_JOIST_SPAN / 4  // max 500 mm overhang past last beam
 
+export const UTERUM_POST_W  = 0.060   // 60 mm aluminiumprofil
+export const UTERUM_FRAME_H = 0.060   // 60 mm toppram
+export const UTERUM_GLASS_T = 0.008   // 8 mm glasskiva
+
 export const PERGOLA_POST_W      = 0.090  // 90×90 mm post
 export const PERGOLA_BEAM_W      = 0.045  // 45 mm beam width (thin dimension)
 export const PERGOLA_BEAM_H      = 0.145  // 145 mm beam height

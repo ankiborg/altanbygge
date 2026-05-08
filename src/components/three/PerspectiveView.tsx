@@ -15,11 +15,12 @@ import {
   PERGOLA_POST_W, PERGOLA_BEAM_W, PERGOLA_BEAM_H,
   PERGOLA_RAFTER_W, PERGOLA_RAFTER_H, PERGOLA_RAFTER_OV,
   PERGOLA_POST_BASE_W, PERGOLA_POST_BASE_H,
+  UTERUM_POST_W, UTERUM_FRAME_H, UTERUM_GLASS_T,
   getJoistXPositions, getPostXPositions, getBeamYPositions, beamXExtent, joistYExtent,
   spanPositions,
 } from '@/utils/structure'
 import { pieceId } from '@/utils/cutList'
-import type { DeckShape, WallDirection, Stair, PlanterBox, Pergola } from '@/types/deck'
+import type { DeckShape, WallDirection, Stair, PlanterBox, Pergola, Uterum } from '@/types/deck'
 import DetailPanel from '@/components/ui/DetailPanel'
 
 const DIR_ANGLE: Record<WallDirection, number> = {
@@ -361,6 +362,73 @@ function addPergolas(
   }
 }
 
+function addUterums(
+  group: THREE.Group,
+  uterums: Uterum[],
+  heightAboveGround: number,
+) {
+  const frameMat = new THREE.MeshLambertMaterial({ color: 0xc8c8c8 })
+  const glassMat = new THREE.MeshLambertMaterial({
+    color: 0xaaddff, transparent: true, opacity: 0.22, side: THREE.DoubleSide,
+  })
+  const h = heightAboveGround
+  const pw = UTERUM_POST_W
+  const fw = UTERUM_FRAME_H
+  const gt = UTERUM_GLASS_T
+
+  for (const ur of uterums) {
+    const { x, y, width, depth, height } = ur
+    const postTopY = h + height
+
+    // Corner posts
+    const corners = [
+      { x: x - width / 2, z: y - depth / 2 },
+      { x: x + width / 2, z: y - depth / 2 },
+      { x: x + width / 2, z: y + depth / 2 },
+      { x: x - width / 2, z: y + depth / 2 },
+    ]
+    for (const c of corners) {
+      const post = new THREE.Mesh(new THREE.BoxGeometry(pw, height, pw), frameMat)
+      post.position.set(c.x, h + height / 2, c.z)
+      group.add(post)
+    }
+
+    // Top frame beams on all 4 sides
+    const frameBeams = [
+      { geo: new THREE.BoxGeometry(width, fw, fw), pos: { x, y: postTopY + fw / 2, z: y - depth / 2 } },
+      { geo: new THREE.BoxGeometry(width, fw, fw), pos: { x, y: postTopY + fw / 2, z: y + depth / 2 } },
+      { geo: new THREE.BoxGeometry(fw, fw, depth), pos: { x: x - width / 2, y: postTopY + fw / 2, z: y } },
+      { geo: new THREE.BoxGeometry(fw, fw, depth), pos: { x: x + width / 2, y: postTopY + fw / 2, z: y } },
+    ]
+    for (const { geo, pos } of frameBeams) {
+      const beam = new THREE.Mesh(geo, frameMat)
+      beam.position.set(pos.x, pos.y, pos.z)
+      group.add(beam)
+    }
+
+    // Glass walls on 3 sides (not the house/wall side at z = y - depth/2)
+    const glassW = width - pw * 2
+    const glassD = depth - pw * 2
+    // Outer wall (away from house)
+    const frontGlass = new THREE.Mesh(new THREE.BoxGeometry(glassW, height, gt), glassMat)
+    frontGlass.position.set(x, h + height / 2, y + depth / 2)
+    group.add(frontGlass)
+    // Left side
+    const leftGlass = new THREE.Mesh(new THREE.BoxGeometry(gt, height, glassD), glassMat)
+    leftGlass.position.set(x - width / 2, h + height / 2, y)
+    group.add(leftGlass)
+    // Right side
+    const rightGlass = new THREE.Mesh(new THREE.BoxGeometry(gt, height, glassD), glassMat)
+    rightGlass.position.set(x + width / 2, h + height / 2, y)
+    group.add(rightGlass)
+
+    // Glass roof
+    const roofGlass = new THREE.Mesh(new THREE.BoxGeometry(width, gt, depth), glassMat)
+    roofGlass.position.set(x, postTopY + fw + gt / 2, y)
+    group.add(roofGlass)
+  }
+}
+
 function clearGroup(group: THREE.Group) {
   while (group.children.length) {
     const child = group.children[0]
@@ -377,7 +445,7 @@ export default function PerspectiveView() {
   const {
     wallLength, wallDirection, deckWidth, deckDepth,
     heightAboveGround, boardDirection, customShape,
-    stairs, planters, pergolas, viewLayer, setViewLayer,
+    stairs, planters, pergolas, uterums, viewLayer, setViewLayer,
     selectedPieceId,
   } = useDeckStore()
 
@@ -552,6 +620,7 @@ export default function PerspectiveView() {
     }
 
     addPergolas(group, meshMap, pergolas, heightAboveGround)
+    addUterums(group, uterums, heightAboveGround)
 
     // Re-apply selection highlight after rebuild
     const curId = selectedIdRef.current
@@ -564,7 +633,7 @@ export default function PerspectiveView() {
     }
   }, [
     wallLength, wallDirection, deckWidth, deckDepth, heightAboveGround, boardDirection,
-    customShape, stairs, planters, pergolas, viewLayer,
+    customShape, stairs, planters, pergolas, uterums, viewLayer,
   ])
 
   // ── Effect 3: update highlight when selection changes ─────────────────────

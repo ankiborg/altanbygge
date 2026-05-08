@@ -1,4 +1,4 @@
-import type { DeckConfig, DeckShape, Stair, PlanterBox, Pergola } from '@/types/deck'
+import type { DeckConfig, DeckShape, Stair, PlanterBox, Pergola, Uterum } from '@/types/deck'
 import { getBoardLinesForShape, getEdgeDims } from './polygon'
 
 import {
@@ -7,6 +7,7 @@ import {
   MAX_CANTILEVER,
   PERGOLA_POST_W, PERGOLA_BEAM_W, PERGOLA_BEAM_H,
   PERGOLA_RAFTER_W, PERGOLA_RAFTER_H, PERGOLA_RAFTER_OV,
+  UTERUM_POST_W, UTERUM_FRAME_H,
   getJoistXPositions, getPostXPositions, getBeamYPositions,
   beamXExtent, joistYExtent, spanPositions,
 } from './structure'
@@ -91,6 +92,7 @@ export function generateCutList(
   stairs: Stair[],
   _planters: PlanterBox[],
   pergolas: Pergola[] = [],
+  uterums: Uterum[] = [],
 ): KaplistItem[] {
   const items: KaplistItem[] = []
 
@@ -302,6 +304,45 @@ export function generateCutList(
         kind:         'regel',
         crossSection: { w: PERGOLA_RAFTER_W * 1000, h: PERGOLA_RAFTER_H * 1000 },
         cutLength:    rafterLen,
+        angle1: 0, angle2: 0,
+        note,
+      })
+    }
+  }
+
+  // ── Uterums ──────────────────────────────────────────────────────────────────
+  for (let ui = 0; ui < uterums.length; ui++) {
+    const ur = uterums[ui]
+    const { width, depth, height } = ur
+    const note = `Uterum ${ui + 1}`
+
+    // 4 corner posts
+    for (let i = 0; i < 4; i++) {
+      items.push({
+        id:           `uterum-${ui}-post-${i}`,
+        kind:         'stolpe',
+        crossSection: { w: UTERUM_POST_W * 1000, h: UTERUM_POST_W * 1000 },
+        cutLength:    height,
+        angle1: 0, angle2: 0,
+        note,
+      })
+    }
+
+    // 4 top frame beams (2 × width + 2 × depth)
+    for (let i = 0; i < 2; i++) {
+      items.push({
+        id:           `uterum-${ui}-framew-${i}`,
+        kind:         'balk',
+        crossSection: { w: UTERUM_FRAME_H * 1000, h: UTERUM_FRAME_H * 1000 },
+        cutLength:    width,
+        angle1: 0, angle2: 0,
+        note,
+      })
+      items.push({
+        id:           `uterum-${ui}-framed-${i}`,
+        kind:         'balk',
+        crossSection: { w: UTERUM_FRAME_H * 1000, h: UTERUM_FRAME_H * 1000 },
+        cutLength:    depth,
         angle1: 0, angle2: 0,
         note,
       })

@@ -9,8 +9,8 @@ import {
   isValidCornerForStair,
   getPlanterCorners,
 } from '@/utils/stairPlanter'
-import { getPostXPositions, getBeamYPositions, beamXExtent, POST_W, FOOTING_W, PERGOLA_POST_W } from '@/utils/structure'
-import type { DeckConfig, DeckShape, Point, Stair, PlanterBox, Pergola } from '@/types/deck'
+import { getPostXPositions, getBeamYPositions, beamXExtent, POST_W, FOOTING_W, PERGOLA_POST_W, UTERUM_POST_W } from '@/utils/structure'
+import type { DeckConfig, DeckShape, Point, Stair, PlanterBox, Pergola, Uterum } from '@/types/deck'
 
 // ---------------------------------------------------------------------------
 // Layout constants
@@ -32,6 +32,7 @@ type HoverEdge =
 
 type DragState =
   | { kind: 'pergola';      id: string; offsetX: number; offsetY: number; moved: boolean }
+  | { kind: 'uterum';       id: string; offsetX: number; offsetY: number; moved: boolean }
   | { kind: 'stair';        id: string; edgeIndex: number; startProj: number; startOffset: number; moved: boolean }
   | { kind: 'planter';      id: string; edgeIndex: number; startProj: number; startOffset: number; moved: boolean }
   | { kind: 'edge';         edgeIndex: number; startProj: number; originalShape: DeckShape; moved: boolean }
@@ -358,6 +359,67 @@ function drawPergola(
   ctx.restore()
 }
 
+function drawUterum(
+  ctx: CanvasRenderingContext2D,
+  ur: Uterum,
+  idx: number,
+  scale: number,
+  origin: Point,
+  selected: boolean,
+) {
+  const cc = toCanvas({ x: ur.x, y: ur.y }, scale, origin)
+  const hw = (ur.width  / 2) * scale
+  const hd = (ur.depth  / 2) * scale
+  const hp = (UTERUM_POST_W / 2) * scale
+
+  ctx.save()
+
+  // Semi-transparent glass fill
+  ctx.fillStyle = selected ? 'rgba(37,99,235,0.07)' : 'rgba(186,225,255,0.22)'
+  ctx.fillRect(cc.x - hw, cc.y - hd, hw * 2, hd * 2)
+
+  const lineColor = selected ? '#2563eb' : '#3a6e96'
+  ctx.lineWidth   = selected ? 2 : 1.5
+
+  // 3 glass walls: outer (bottom), left, right — drawn solid
+  ctx.strokeStyle = lineColor
+  ctx.setLineDash([])
+  ctx.beginPath()
+  ctx.moveTo(cc.x - hw, cc.y + hd)
+  ctx.lineTo(cc.x + hw, cc.y + hd)  // outer wall
+  ctx.moveTo(cc.x - hw, cc.y - hd)
+  ctx.lineTo(cc.x - hw, cc.y + hd)  // left wall
+  ctx.moveTo(cc.x + hw, cc.y - hd)
+  ctx.lineTo(cc.x + hw, cc.y + hd)  // right wall
+  ctx.stroke()
+
+  // House side — dashed to show it's open
+  ctx.setLineDash([4, 3])
+  ctx.beginPath()
+  ctx.moveTo(cc.x - hw, cc.y - hd)
+  ctx.lineTo(cc.x + hw, cc.y - hd)
+  ctx.stroke()
+  ctx.setLineDash([])
+
+  // Corner post squares
+  const postColor = selected ? '#2563eb' : '#1e5478'
+  for (const [sx, sy] of [[-hw, -hd], [hw, -hd], [hw, hd], [-hw, hd]] as [number, number][]) {
+    ctx.fillStyle = postColor
+    ctx.fillRect(cc.x + sx - hp, cc.y + sy - hp, hp * 2, hp * 2)
+    ctx.strokeStyle = lineColor
+    ctx.lineWidth = 0.5
+    ctx.strokeRect(cc.x + sx - hp, cc.y + sy - hp, hp * 2, hp * 2)
+  }
+
+  // Label
+  ctx.font = 'bold 11px sans-serif'
+  ctx.textAlign = 'center'
+  ctx.textBaseline = 'middle'
+  ctx.fillStyle = selected ? '#2563eb' : '#1e3a4a'
+  ctx.fillText(`Uterum ${idx + 1}  ${ur.width.toFixed(1)}×${ur.depth.toFixed(1)} m`, cc.x, cc.y)
+  ctx.restore()
+}
+
 // ---------------------------------------------------------------------------
 // Main draw function
 // ---------------------------------------------------------------------------
@@ -368,15 +430,18 @@ interface DrawExtras {
   stairs: Stair[]
   planters: PlanterBox[]
   pergolas: Pergola[]
+  uterums: Uterum[]
   heightAboveGround: number
   hoverTarget: HoverTarget
   hoverEdge: HoverEdge
   placingStair: boolean
   placingPlanter: boolean
   placingPergola: boolean
+  placingUterum: boolean
   selectedStairId: string | null
   selectedPlanterId: string | null
   selectedPergolaId: string | null
+  selectedUterumId: string | null
   viewLayer: number
   showEdgeLabels: boolean
 }
@@ -553,6 +618,40 @@ function drawPlan(
     for (let pi = 0; pi < extras.pergolas.length; pi++) {
       drawPergola(ctx, extras.pergolas[pi], pi, scale, origin, extras.pergolas[pi].id === extras.selectedPergolaId)
     }
+  }
+
+  // --- Uterums ---
+  if (!isDrawingMode) {
+    for (let ui = 0; ui < extras.uterums.length; ui++) {
+      drawUterum(ctx, extras.uterums[ui], ui, scale, origin, extras.uterums[ui].id === extras.selectedUterumId)
+    }
+  }
+
+  // --- Uterum placement preview ---
+  if (extras.placingUterum && cursor) {
+    const DEFAULT_W = 3.0, DEFAULT_D = 3.0
+    const cc = toCanvas(cursor, scale, origin)
+    const hw = (DEFAULT_W / 2) * scale
+    const hd = (DEFAULT_D / 2) * scale
+    const hp = (UTERUM_POST_W / 2) * scale
+    ctx.save()
+    ctx.fillStyle = 'rgba(186,225,255,0.18)'
+    ctx.fillRect(cc.x - hw, cc.y - hd, hw * 2, hd * 2)
+    ctx.strokeStyle = 'rgba(58,110,150,0.65)'
+    ctx.lineWidth = 1.5
+    ctx.beginPath()
+    ctx.moveTo(cc.x - hw, cc.y + hd); ctx.lineTo(cc.x + hw, cc.y + hd)
+    ctx.moveTo(cc.x - hw, cc.y - hd); ctx.lineTo(cc.x - hw, cc.y + hd)
+    ctx.moveTo(cc.x + hw, cc.y - hd); ctx.lineTo(cc.x + hw, cc.y + hd)
+    ctx.stroke()
+    ctx.setLineDash([4, 3])
+    ctx.beginPath(); ctx.moveTo(cc.x - hw, cc.y - hd); ctx.lineTo(cc.x + hw, cc.y - hd); ctx.stroke()
+    ctx.setLineDash([])
+    ctx.fillStyle = 'rgba(58,110,150,0.6)'
+    for (const [sx, sy] of [[-hw, -hd], [hw, -hd], [hw, hd], [-hw, hd]] as [number, number][]) {
+      ctx.fillRect(cc.x + sx - hp, cc.y + sy - hp, hp * 2, hp * 2)
+    }
+    ctx.restore()
   }
 
   // --- Pergola placement preview ---
@@ -811,7 +910,7 @@ function drawPlan(
   }
 
   // Placing-mode instruction
-  if (extras.placingStair || extras.placingPlanter || extras.placingPergola) {
+  if (extras.placingStair || extras.placingPlanter || extras.placingPergola || extras.placingUterum) {
     ctx.save()
     ctx.font = '11px sans-serif'
     ctx.textAlign = 'left'
@@ -820,7 +919,8 @@ function drawPlan(
     ctx.fillText(
       extras.placingStair   ? 'Klicka på en kant eller ett hörn (gul cirkel) för att placera trappan'
       : extras.placingPlanter ? 'Klicka på en kant för att placera blomlådan'
-      : 'Klicka i planvyn för att placera pergolan',
+      : extras.placingPergola ? 'Klicka i planvyn för att placera pergolan'
+      : 'Klicka i planvyn för att placera uterummet',
       PAD, PAD / 2 - 4,
     )
     ctx.restore()
@@ -842,26 +942,26 @@ export default function PlanView() {
   const {
     wallLength, wallDirection, deckWidth, deckDepth, heightAboveGround, boardDirection,
     customShape, drawingPoints, isDrawingMode,
-    stairs, planters, pergolas,
-    placingStair, placingPlanter, placingPergola,
-    selectedStairId, selectedPlanterId, selectedPergolaId,
+    stairs, planters, pergolas, uterums,
+    placingStair, placingPlanter, placingPergola, placingUterum,
+    selectedStairId, selectedPlanterId, selectedPergolaId, selectedUterumId,
     viewLayer,
     addDrawingPoint, finishDrawing,
-    addStair, addPlanter, addPergola,
-    updateStair, updatePlanter, updatePergola,
+    addStair, addPlanter, addPergola, addUterum,
+    updateStair, updatePlanter, updatePergola, updateUterum,
     setCustomShape,
-    selectStair, selectPlanter, selectPergola, clearSelection,
+    selectStair, selectPlanter, selectPergola, selectUterum, clearSelection,
   } = useDeckStore()
 
   const cfg: DeckConfig = { wallLength, wallDirection, deckWidth, deckDepth, heightAboveGround, boardDirection }
   const shape: DeckShape = customShape ?? getDeckCorners(cfg)
 
   const extras: DrawExtras = {
-    stairs, planters, pergolas, heightAboveGround,
+    stairs, planters, pergolas, uterums, heightAboveGround,
     hoverTarget: hoverTargetRef.current,
     hoverEdge: hoverEdgeRef.current,
-    placingStair, placingPlanter, placingPergola,
-    selectedStairId, selectedPlanterId, selectedPergolaId,
+    placingStair, placingPlanter, placingPergola, placingUterum,
+    selectedStairId, selectedPlanterId, selectedPergolaId, selectedUterumId,
     viewLayer,
     showEdgeLabels: !!customShape,
   }
@@ -891,8 +991,8 @@ export default function PlanView() {
   }, [
     wallLength, wallDirection, deckWidth, deckDepth, heightAboveGround, boardDirection,
     customShape, drawingPoints, isDrawingMode,
-    stairs, planters, pergolas, placingStair, placingPlanter, placingPergola,
-    selectedStairId, selectedPlanterId, selectedPergolaId,
+    stairs, planters, pergolas, uterums, placingStair, placingPlanter, placingPergola, placingUterum,
+    selectedStairId, selectedPlanterId, selectedPergolaId, selectedUterumId,
     viewLayer,
   ])
 
@@ -952,7 +1052,7 @@ export default function PlanView() {
   }
 
   function handleMouseDown(e: React.MouseEvent<HTMLCanvasElement>) {
-    if (isDrawingMode || placingStair || placingPlanter || placingPergola) return
+    if (isDrawingMode || placingStair || placingPlanter || placingPergola || placingUterum) return
     hoverEdgeRef.current = null
     const rect = canvasRef.current!.getBoundingClientRect()
     const cx = e.clientX - rect.left
@@ -966,6 +1066,18 @@ export default function PlanView() {
       if (cx >= cpg.x - hw && cx <= cpg.x + hw && cy >= cpg.y - hd && cy <= cpg.y + hd) {
         const world = worldFromEvent(e)
         dragRef.current = { kind: 'pergola', id: pg.id, offsetX: world.x - pg.x, offsetY: world.y - pg.y, moved: false }
+        e.preventDefault()
+        return
+      }
+    }
+
+    for (const ur of uterums) {
+      const cur = toCanvas({ x: ur.x, y: ur.y }, scale, origin)
+      const hw = (ur.width / 2) * scale
+      const hd = (ur.depth / 2) * scale
+      if (cx >= cur.x - hw && cx <= cur.x + hw && cy >= cur.y - hd && cy <= cur.y + hd) {
+        const world = worldFromEvent(e)
+        dragRef.current = { kind: 'uterum', id: ur.id, offsetX: world.x - ur.x, offsetY: world.y - ur.y, moved: false }
         e.preventDefault()
         return
       }
@@ -1070,6 +1182,18 @@ export default function PlanView() {
           const newX = Math.min(Math.max(snapped.x - drag.offsetX, Math.min(...xs) + hw), Math.max(...xs) - hw)
           const newY = Math.min(Math.max(snapped.y - drag.offsetY, Math.min(...ys) + hd), Math.max(...ys) - hd)
           updatePergola(drag.id, { x: newX, y: newY })
+        }
+      } else if (drag.kind === 'uterum') {
+        const snapped = snapToGrid(world, GRID)
+        const ur = uterums.find(u => u.id === drag.id)
+        if (ur) {
+          const hw = ur.width / 2
+          const hd = ur.depth / 2
+          const xs = shape.map(p => p.x)
+          const ys = shape.map(p => p.y)
+          const newX = Math.min(Math.max(snapped.x - drag.offsetX, Math.min(...xs) + hw), Math.max(...xs) - hw)
+          const newY = Math.min(Math.max(snapped.y - drag.offsetY, Math.min(...ys) + hd), Math.max(...ys) - hd)
+          updateUterum(drag.id, { x: newX, y: newY })
         }
       } else if (drag.kind === 'stair' || drag.kind === 'planter') {
         const allEdges = getEdgeDims(shape)
@@ -1326,6 +1450,21 @@ export default function PlanView() {
       return
     }
 
+    // Placing uterum
+    if (placingUterum) {
+      const pt = snapPoint(worldFromEvent(e))
+      addUterum({
+        id:     crypto.randomUUID(),
+        x:      pt.x,
+        y:      Math.max(1.5, pt.y),
+        width:  3.0,
+        depth:  3.0,
+        height: 2.2,
+      })
+      cursorRef.current = null
+      return
+    }
+
     // Selection
     const rect = canvasRef.current!.getBoundingClientRect()
     const cx = e.clientX - rect.left
@@ -1370,10 +1509,20 @@ export default function PlanView() {
       }
     }
 
+    for (const ur of uterums) {
+      const cur = toCanvas({ x: ur.x, y: ur.y }, scale, origin)
+      const hw = (ur.width / 2) * scale
+      const hd = (ur.depth / 2) * scale
+      if (cx >= cur.x - hw && cx <= cur.x + hw && cy >= cur.y - hd && cy <= cur.y + hd) {
+        selectUterum(ur.id)
+        return
+      }
+    }
+
     clearSelection()
   }
 
-  const activeCursor = isDrawingMode || placingStair || placingPlanter || placingPergola ? 'cursor-crosshair' : ''
+  const activeCursor = isDrawingMode || placingStair || placingPlanter || placingPergola || placingUterum ? 'cursor-crosshair' : ''
 
   return (
     <div className={`w-full h-full bg-white ${activeCursor}`}>

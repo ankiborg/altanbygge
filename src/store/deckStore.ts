@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { DeckConfig, DeckShape, Point, WallDirection, BoardDirection, Stair, PlanterBox, Pergola } from '@/types/deck'
+import type { DeckConfig, DeckShape, Point, WallDirection, BoardDirection, Stair, PlanterBox, Pergola, Uterum } from '@/types/deck'
 import { resizeEdge } from '@/utils/polygon'
 
 interface DeckStore extends DeckConfig {
@@ -25,16 +25,20 @@ interface DeckStore extends DeckConfig {
   stairs: Stair[]
   planters: PlanterBox[]
   pergolas: Pergola[]
+  uterums: Uterum[]
   placingStair: boolean
   placingPlanter: boolean
   placingPergola: boolean
+  placingUterum: boolean
   selectedStairId: string | null
   selectedPlanterId: string | null
   selectedPergolaId: string | null
+  selectedUterumId: string | null
 
   startPlacingStair: () => void
   startPlacingPlanter: () => void
   startPlacingPergola: () => void
+  startPlacingUterum: () => void
   cancelPlacing: () => void
 
   addStair: (stair: Stair) => void
@@ -49,9 +53,14 @@ interface DeckStore extends DeckConfig {
   updatePergola: (id: string, updates: Partial<Omit<Pergola, 'id'>>) => void
   deletePergola: (id: string) => void
 
+  addUterum: (u: Uterum) => void
+  updateUterum: (id: string, updates: Partial<Omit<Uterum, 'id'>>) => void
+  deleteUterum: (id: string) => void
+
   selectStair: (id: string) => void
   selectPlanter: (id: string) => void
   selectPergola: (id: string) => void
+  selectUterum: (id: string) => void
   clearSelection: () => void
 
   viewLayer: 1 | 2 | 3 | 4 | 5
@@ -100,17 +109,21 @@ export const useDeckStore = create<DeckStore>()((set, get) => ({
   stairs: [],
   planters: [],
   pergolas: [],
+  uterums: [],
   placingStair: false,
   placingPlanter: false,
   placingPergola: false,
+  placingUterum: false,
   selectedStairId: null,
   selectedPlanterId: null,
   selectedPergolaId: null,
+  selectedUterumId: null,
 
-  startPlacingStair:   () => set({ placingStair: true,   placingPlanter: false, placingPergola: false, selectedStairId: null, selectedPlanterId: null, selectedPergolaId: null }),
-  startPlacingPlanter: () => set({ placingPlanter: true, placingStair: false,   placingPergola: false, selectedStairId: null, selectedPlanterId: null, selectedPergolaId: null }),
-  startPlacingPergola: () => set({ placingPergola: true, placingStair: false,   placingPlanter: false, selectedStairId: null, selectedPlanterId: null, selectedPergolaId: null }),
-  cancelPlacing: () => set({ placingStair: false, placingPlanter: false, placingPergola: false }),
+  startPlacingStair:   () => set({ placingStair: true,   placingPlanter: false, placingPergola: false, placingUterum: false, selectedStairId: null, selectedPlanterId: null, selectedPergolaId: null, selectedUterumId: null }),
+  startPlacingPlanter: () => set({ placingPlanter: true, placingStair: false,   placingPergola: false, placingUterum: false, selectedStairId: null, selectedPlanterId: null, selectedPergolaId: null, selectedUterumId: null }),
+  startPlacingPergola: () => set({ placingPergola: true, placingStair: false,   placingPlanter: false, placingUterum: false, selectedStairId: null, selectedPlanterId: null, selectedPergolaId: null, selectedUterumId: null }),
+  startPlacingUterum:  () => set({ placingUterum: true,  placingStair: false,   placingPlanter: false, placingPergola: false, selectedStairId: null, selectedPlanterId: null, selectedPergolaId: null, selectedUterumId: null }),
+  cancelPlacing: () => set({ placingStair: false, placingPlanter: false, placingPergola: false, placingUterum: false }),
 
   addStair: (stair) => set((s) => ({ stairs: [...s.stairs, stair], placingStair: false })),
   updateStair: (id, updates) =>
@@ -130,10 +143,17 @@ export const useDeckStore = create<DeckStore>()((set, get) => ({
   deletePergola: (id) =>
     set((s) => ({ pergolas: s.pergolas.filter((pg) => pg.id !== id), selectedPergolaId: null })),
 
-  selectStair:   (id) => set({ selectedStairId: id,   selectedPlanterId: null, selectedPergolaId: null }),
-  selectPlanter: (id) => set({ selectedPlanterId: id, selectedStairId: null,   selectedPergolaId: null }),
-  selectPergola: (id) => set({ selectedPergolaId: id, selectedStairId: null,   selectedPlanterId: null }),
-  clearSelection: () => set({ selectedStairId: null, selectedPlanterId: null, selectedPergolaId: null }),
+  addUterum: (u) => set((s) => ({ uterums: [...s.uterums, u], placingUterum: false })),
+  updateUterum: (id, updates) =>
+    set((s) => ({ uterums: s.uterums.map((u) => u.id === id ? { ...u, ...updates } : u) })),
+  deleteUterum: (id) =>
+    set((s) => ({ uterums: s.uterums.filter((u) => u.id !== id), selectedUterumId: null })),
+
+  selectStair:   (id) => set({ selectedStairId: id,   selectedPlanterId: null, selectedPergolaId: null, selectedUterumId: null }),
+  selectPlanter: (id) => set({ selectedPlanterId: id, selectedStairId: null,   selectedPergolaId: null, selectedUterumId: null }),
+  selectPergola: (id) => set({ selectedPergolaId: id, selectedStairId: null,   selectedPlanterId: null, selectedUterumId: null }),
+  selectUterum:  (id) => set({ selectedUterumId: id,  selectedStairId: null,   selectedPlanterId: null, selectedPergolaId: null }),
+  clearSelection: () => set({ selectedStairId: null, selectedPlanterId: null, selectedPergolaId: null, selectedUterumId: null }),
 
   viewLayer: 4,
   setViewLayer: (layer) => set({ viewLayer: layer }),

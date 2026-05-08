@@ -165,7 +165,7 @@ export default function DetailPanel() {
   const {
     wallLength, wallDirection, deckWidth, deckDepth,
     heightAboveGround, boardDirection, customShape,
-    stairs, planters, pergolas, selectedPieceId, setSelectedPiece,
+    stairs, planters, pergolas, uterums, selectedPieceId, setSelectedPiece,
   } = useDeckStore()
 
   const shape = useMemo(
@@ -179,8 +179,8 @@ export default function DetailPanel() {
   )
 
   const items = useMemo(
-    () => generateCutList(shape, cfg, stairs, planters, pergolas),
-    [shape, cfg, stairs, planters, pergolas],
+    () => generateCutList(shape, cfg, stairs, planters, pergolas, uterums),
+    [shape, cfg, stairs, planters, pergolas, uterums],
   )
 
   const sorted = useMemo(

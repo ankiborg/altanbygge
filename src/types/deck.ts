@@ -45,3 +45,12 @@ export interface Pergola {
   wallAttached: boolean  // v2: attach to house wall instead of rear posts
   rafterCC:     number   // rafter spacing c/c (m), default 0.600
 }
+
+export interface Uterum {
+  id:     string
+  x:      number   // centre X on deck (m from wall centre)
+  y:      number   // centre Y (m from wall)
+  width:  number   // X dimension (parallel to wall)
+  depth:  number   // Y dimension (out from wall)
+  height: number   // m above deck surface
+}
